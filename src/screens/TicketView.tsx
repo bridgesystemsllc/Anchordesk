@@ -1,0 +1,466 @@
+import { useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  BookOpen,
+  Check,
+  CornerUpLeft,
+  FileText,
+  History,
+  Mail,
+  MessageSquare,
+  Package,
+  Paperclip,
+  Phone,
+  RefreshCw,
+  Send,
+  Settings2,
+  Sparkles,
+  Star,
+  StickyNote,
+  User,
+} from 'lucide-react';
+import { EscalateModal } from '@/components/EscalateModal';
+import { LogCallModal } from '@/components/LogCallModal';
+import { Avatar, BrandChip, EmptyState, KeyVal, SlaRing, StatusBadge } from '@/components/ui';
+import { BRANDS, INTENT_LABEL } from '@/data/brands';
+import { TICKETS, agentById, customerById, ticketById } from '@/data/mock';
+import type { Citation, Message } from '@/data/types';
+import { clockTime, cx, fullStamp, shortAge, usd } from '@/lib/utils';
+
+const TRACK_ORDER = ['unfulfilled', 'in_transit', 'out_for_delivery', 'delivered'] as const;
+const TRACK_LABELS = ['Placed', 'In transit', 'Out for del.', 'Delivered'];
+
+export function TicketView() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const ticket = id ? ticketById(id) : undefined;
+
+  const [draft, setDraft] = useState(ticket?.aiDraft ?? '');
+  const [generating, setGenerating] = useState(false);
+  const [escalating, setEscalating] = useState(false);
+  const [logging, setLogging] = useState(false);
+  const [openCitation, setOpenCitation] = useState<Citation | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const similar = useMemo(
+    () =>
+      ticket
+        ? TICKETS.filter((t) => t.id !== ticket.id && t.intent === ticket.intent).slice(0, 3)
+        : [],
+    [ticket],
+  );
+
+  if (!ticket) {
+    return (
+      <div className="page">
+        <EmptyState
+          glyph={<Mail size={26} />}
+          title="Ticket not found"
+          body="It may have been merged or closed. Head back to the queue and try again."
+          action={
+            <Link to="/queue" className="btn btn-secondary">
+              <ArrowLeft size={14} /> Back to queue
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
+  const customer = customerById(ticket.customerId);
+  const owner = agentById(ticket.assigneeId);
+  const brand = BRANDS[ticket.brand];
+
+  const regenerate = () => {
+    setGenerating(true);
+    window.setTimeout(() => {
+      setDraft(ticket.aiDraft ?? '');
+      setGenerating(false);
+    }, 1100);
+  };
+
+  return (
+    <div className="ticket-layout">
+      <section className="ticket-main">
+        <header className="ticket-head">
+          <div className="row gap-10">
+            <button className="icon-btn" onClick={() => navigate(-1)} aria-label="Back">
+              <ArrowLeft size={15} />
+            </button>
+            <h1 className="ticket-subject truncate">{ticket.subject}</h1>
+            <div className="ml-a row gap-6">
+              <button className="btn btn-sm btn-secondary" onClick={() => setLogging(true)}>
+                <Phone size={13} /> Log call
+              </button>
+              <button className="btn btn-sm btn-secondary" onClick={() => setEscalating(true)}>
+                <ArrowUpRight size={13} /> Escalate
+              </button>
+              <button className="btn btn-sm btn-primary">
+                <Check size={13} /> Resolve
+              </button>
+            </div>
+          </div>
+
+          <div className="ticket-meta">
+            <span className="mono">#{ticket.number}</span>
+            <StatusBadge status={ticket.status} />
+            <BrandChip brand={ticket.brand} full />
+            <span className="chip">{INTENT_LABEL[ticket.intent]}</span>
+            {ticket.orderNumber && <span className="chip mono">{ticket.orderNumber}</span>}
+            <span>·</span>
+            <span>opened {shortAge(ticket.createdAt)} ago</span>
+            <div className="ml-a row gap-10">
+              {owner ? (
+                <span className="row gap-6">
+                  <Avatar name={owner.name} size="sm" />
+                  <span className="t-sm">{owner.name}</span>
+                </span>
+              ) : (
+                <button className="btn btn-sm btn-ghost">
+                  <User size={13} /> Assign
+                </button>
+              )}
+              {ticket.status !== 'resolved' && ticket.status !== 'closed' && (
+                <SlaRing createdAt={ticket.createdAt} dueAt={ticket.slaDueAt} />
+              )}
+            </div>
+          </div>
+        </header>
+
+        <div className="ticket-scroll">
+          {ticket.aiSummary.length > 0 && (
+            <div className="ai-summary fade-up">
+              <div className="ai-summary-head">
+                <Sparkles size={12} strokeWidth={2.4} />
+                Thread summary
+                <span className="ml-a t-xs t-ter" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                  {ticket.messages.length} events
+                </span>
+              </div>
+              <ul className="ai-summary-body" style={{ margin: 0, paddingLeft: 17 }}>
+                {ticket.aiSummary.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="timeline">
+            {ticket.messages.map((m, i) => (
+              <TimelineItem key={m.id} m={m} index={i} />
+            ))}
+            {sent && (
+              <TimelineItem
+                index={ticket.messages.length}
+                m={{
+                  id: 'sent-now',
+                  kind: 'outbound',
+                  authorName: 'You',
+                  body: draft,
+                  at: new Date().toISOString(),
+                  draftedByAi: true,
+                  editedByHuman: true,
+                }}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="composer">
+          <div className="composer-head">
+            <span className="composer-label">Reply to {customer.name.split(' ')[0]}</span>
+            {ticket.aiDraftReady && !sent && (
+              <span className="badge badge-accent">
+                <Sparkles size={10} /> AI draft
+              </span>
+            )}
+            <div className="ml-a row gap-6">
+              <button className="btn btn-sm btn-ghost" onClick={regenerate} disabled={generating}>
+                <RefreshCw size={12} className={generating ? 'spin' : undefined} /> Regenerate
+              </button>
+              <span className="t-xs t-ter">from {brand.mailbox}</span>
+            </div>
+          </div>
+
+          <div className={cx('composer-box', generating && 'generating')}>
+            <textarea
+              className="composer-textarea"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={
+                ticket.aiDraftReady
+                  ? 'AI draft loading…'
+                  : 'No draft — this one needs a human. Write your reply here.'
+              }
+            />
+
+            {ticket.citations.length > 0 && (
+              <div className="citation-strip">
+                {ticket.citations.map((c) => (
+                  <button key={c.n} className="citation" onClick={() => setOpenCitation(c)}>
+                    <span className="citation-index">{c.n}</span>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="composer-foot">
+              <button className="icon-btn" title="Attach" aria-label="Attach">
+                <Paperclip size={14} />
+              </button>
+              <button className="icon-btn" title="Insert KB article" aria-label="Insert KB article">
+                <BookOpen size={14} />
+              </button>
+              <button className="icon-btn" title="Internal note" aria-label="Internal note">
+                <StickyNote size={14} />
+              </button>
+              <span className="t-xs t-ter ml-a">
+                Threads into the existing conversation · lands in {brand.mailbox} Sent
+              </span>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={!draft.trim() || sent}
+                onClick={() => setSent(true)}
+              >
+                {sent ? <Check size={13} /> : <Send size={13} />}
+                {sent ? 'Sent' : 'Send reply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside className="ticket-rail">
+        <div className="rail-card">
+          <div className="rail-head">
+            <User size={11} /> Customer
+          </div>
+          <div className="rail-body">
+            <div className="row gap-10">
+              <Avatar name={customer.name} size="lg" />
+              <div className="col" style={{ minWidth: 0, lineHeight: 1.35 }}>
+                <span className="row gap-4" style={{ fontWeight: 600, fontSize: 13.5 }}>
+                  {customer.name}
+                  {customer.vip && <Star size={11} style={{ color: 'var(--warning)' }} fill="currentColor" />}
+                </span>
+                <span className="t-xs t-ter truncate">{customer.email}</span>
+              </div>
+            </div>
+            <KeyVal k="Lifetime orders" v={<span className="mono">{customer.lifetimeOrders}</span>} />
+            <KeyVal k="Lifetime value" v={<span className="mono">{usd(customer.lifetimeValue)}</span>} />
+            <KeyVal k="Customer since" v={new Date(customer.since).getFullYear()} />
+            {customer.phone && <KeyVal k="Phone" v={<span className="mono t-sm">{customer.phone}</span>} />}
+          </div>
+        </div>
+
+        {ticket.order ? (
+          <div className="rail-card">
+            <div className="rail-head">
+              <Package size={11} /> Order
+              <span className="ml-a mono" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                {ticket.order.number}
+              </span>
+            </div>
+            <div className="rail-body">
+              <div>
+                <div className="track-steps">
+                  {TRACK_ORDER.map((step, i) => {
+                    const currentIdx = TRACK_ORDER.indexOf(ticket.order!.fulfillmentStatus as never);
+                    const exception = ticket.order!.fulfillmentStatus === 'exception';
+                    const done = !exception && i <= currentIdx;
+                    return (
+                      <span
+                        key={step}
+                        className={cx('track-step', done && 'done', exception && i <= 1 && 'current')}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="track-labels">
+                  {TRACK_LABELS.map((l) => (
+                    <span key={l}>{l}</span>
+                  ))}
+                </div>
+              </div>
+
+              {ticket.order.fulfillmentStatus === 'exception' && (
+                <div className="callout callout-warn">
+                  <History size={13} style={{ flex: 'none', marginTop: 1 }} />
+                  <span>{ticket.order.eta ?? 'Carrier exception — no recent scan.'}</span>
+                </div>
+              )}
+
+              <KeyVal k="Placed" v={fullStamp(ticket.order.placedAt)} />
+              <KeyVal k="Carrier" v={ticket.order.carrier} />
+              <KeyVal k="Tracking" v={<span className="mono t-xs">{ticket.order.tracking}</span>} />
+              <KeyVal k="Ship to" v={ticket.order.shipTo} />
+              <KeyVal k="Total" v={<span className="mono">{usd(ticket.order.total)}</span>} />
+
+              <hr className="glow-rule" />
+
+              {ticket.order.lines.map((l) => (
+                <div className="line-item" key={l.sku}>
+                  <span className="line-thumb">{l.qty}×</span>
+                  <span className="col grow" style={{ minWidth: 0, lineHeight: 1.3 }}>
+                    <span className="line-name">{l.name}</span>
+                    <span className="t-xs t-ter mono">{l.sku}</span>
+                  </span>
+                  <span className="mono t-sm">{usd(l.price)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rail-card">
+            <div className="rail-head">
+              <Package size={11} /> Order
+            </div>
+            <div className="rail-body">
+              <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+                No order matched this customer. Search Shopify by email or name to attach one.
+              </p>
+              <button className="btn btn-sm btn-secondary">Find order</button>
+            </div>
+          </div>
+        )}
+
+        {ticket.policyHits.length > 0 && (
+          <div className="rail-card">
+            <div className="rail-head">
+              <FileText size={11} /> Policy check
+            </div>
+            <div className="rail-body">
+              {ticket.policyHits.map((p) => (
+                <div className="policy-hit" key={p.title}>
+                  <strong>{p.title}</strong>
+                  {p.text}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {similar.length > 0 && (
+          <div className="rail-card">
+            <div className="rail-head">
+              <MessageSquare size={11} /> Similar past tickets
+            </div>
+            <div className="rail-body">
+              {similar.map((s) => (
+                <Link key={s.id} to={`/tickets/${s.id}`} className="col gap-4" style={{ lineHeight: 1.35 }}>
+                  <span className="t-sm truncate">{s.subject}</span>
+                  <span className="row gap-6 t-xs t-ter">
+                    <BrandChip brand={s.brand} />
+                    <span className="mono">#{s.number}</span>
+                    <span>· {shortAge(s.createdAt)} old</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="rail-card">
+          <div className="rail-head">
+            <Settings2 size={11} /> Brand voice
+          </div>
+          <div className="rail-body">
+            <p className="t-sm t-sec" style={{ lineHeight: 1.55 }}>
+              {brand.voice}
+            </p>
+            <span className="t-xs t-ter">Signature: {brand.signature}</span>
+          </div>
+        </div>
+      </aside>
+
+      {escalating && <EscalateModal ticket={ticket} onClose={() => setEscalating(false)} />}
+      {logging && <LogCallModal ticket={ticket} onClose={() => setLogging(false)} />}
+      {openCitation && <CitationModal citation={openCitation} onClose={() => setOpenCitation(null)} />}
+    </div>
+  );
+}
+
+function CitationModal({ citation, onClose }: { citation: Citation; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true">
+        <header className="modal-header">
+          <span className="empty-glyph" style={{ width: 34, height: 34, borderRadius: 10, boxShadow: 'none' }}>
+            <BookOpen size={16} />
+          </span>
+          <div>
+            <h2 className="modal-title">{citation.label}</h2>
+            <p className="modal-subtitle">{citation.source}</p>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+        <div className="modal-body">
+          <p style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+            {citation.snippet}
+          </p>
+          <div className="callout callout-accent">
+            <Sparkles size={13} style={{ flex: 'none', marginTop: 1 }} />
+            <span>
+              Every factual claim in a draft maps back to a chunk like this one. Uncited claims are
+              blocked before the draft reaches you.
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TimelineItem({ m, index }: { m: Message; index: number }) {
+  const icon =
+    m.kind === 'inbound' ? <CornerUpLeft size={8} /> :
+    m.kind === 'outbound' ? <Send size={8} /> :
+    m.kind === 'call' ? <Phone size={8} /> :
+    m.kind === 'escalation' ? <ArrowUpRight size={8} /> :
+    m.kind === 'note' ? <StickyNote size={8} /> :
+    <Sparkles size={8} />;
+
+  const nodeTone =
+    m.kind === 'inbound' ? 'inbound' :
+    m.kind === 'outbound' ? 'outbound' :
+    m.kind === 'escalation' ? 'escalation' :
+    'system';
+
+  const isBare = m.kind === 'system';
+
+  return (
+    <div
+      className={cx('tl-item', m.kind === 'outbound' && 'outbound')}
+      style={{ animationDelay: `${Math.min(index * 45, 300)}ms` }}
+    >
+      <span className={cx('tl-node', nodeTone)}>{icon}</span>
+      {isBare ? (
+        <div className="tl-system row gap-6">
+          {m.body}
+          <span className="tl-time">{clockTime(m.at)}</span>
+        </div>
+      ) : (
+        <>
+          <div className="tl-head">
+            <span className="tl-author">{m.authorName}</span>
+            {m.kind === 'note' && <span className="badge badge-neutral">Internal</span>}
+            {m.kind === 'call' && <span className="badge badge-info">Call</span>}
+            {m.kind === 'escalation' && <span className="badge badge-warning">Escalation</span>}
+            {m.draftedByAi && (
+              <span className="badge badge-accent" title={m.editedByHuman ? 'AI draft, edited before sending' : 'AI draft, sent as written'}>
+                <Sparkles size={9} /> {m.editedByHuman ? 'AI · edited' : 'AI'}
+              </span>
+            )}
+            <span className="tl-time">{fullStamp(m.at)}</span>
+          </div>
+          <div className="tl-body">{m.body}</div>
+        </>
+      )}
+    </div>
+  );
+}
