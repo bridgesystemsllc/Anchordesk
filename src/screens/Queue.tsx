@@ -1,13 +1,20 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, Inbox, Sparkles, UserPlus, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Check, Inbox, RefreshCw, Sparkles, UserPlus, X } from 'lucide-react';
 import { BRAND_ORDER, BRANDS, INTENT_SHORT, STATUS_LABEL } from '@/data/brands';
-import { AGENTS, ME, TICKETS, agentById, customerById } from '@/data/mock';
-import type { BrandCode, Intent, Ticket, TicketStatus } from '@/data/types';
+import { AGENTS, ME } from '@/data/mock';
+import { isLive, listQueue } from '@/data/source';
+import type { BrandCode, Intent, TicketStatus } from '@/data/types';
+import type { QueueItem } from '@/data/view';
 import { Avatar, BrandChip, EmptyState, SlaRing, StatusBadge } from '@/components/ui';
+import { useResource } from '@/hooks/useResource';
+import { apiErrorMessage } from '@/lib/api';
 import { cx, shortAge, slaProgress } from '@/lib/utils';
 
-type Sort = 'sla' | 'newest' | 'oldest' | 'priority';
+type Sort = 'sla' | 'newest' | 'priority';
+
+/** Live tickets refresh on their own; a queue that goes stale is a queue nobody trusts. */
+const POLL_MS = 30_000;
 
 const FULFILLMENT_TONE: Record<string, string> = {
   unfulfilled: 'badge-neutral',
@@ -27,7 +34,6 @@ const FULFILLMENT_LABEL: Record<string, string> = {
 
 export function Queue({ mineOnly = false }: { mineOnly?: boolean }) {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
   const [brand, setBrand] = useState<BrandCode | 'all'>('all');
   const [status, setStatus] = useState<TicketStatus | 'open_all'>('open_all');
   const [intent, setIntent] = useState<Intent | 'all'>('all');
@@ -35,35 +41,38 @@ export function Queue({ mineOnly = false }: { mineOnly?: boolean }) {
   const [sort, setSort] = useState<Sort>('sla');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const customerFilter = params.get('customer');
+  const filters = useMemo(
+    () => ({
+      status,
+      ...(brand !== 'all' ? { brand } : {}),
+      ...(intent !== 'all' ? { intent } : {}),
+      ...(assignee === 'unassigned' ? { unassigned: true } : {}),
+      ...(assignee !== 'all' && assignee !== 'unassigned' ? { assignee } : {}),
+    }),
+    [status, brand, intent, assignee],
+  );
+
+  const fetcher = useCallback((signal: AbortSignal) => listQueue(filters, signal), [filters]);
+
+  const { data, error, loading, refreshing, refetch } = useResource<QueueItem[]>(
+    JSON.stringify(filters),
+    fetcher,
+    { pollMs: isLive ? POLL_MS : undefined },
+  );
 
   const rows = useMemo(() => {
-    let list = TICKETS.filter((t) => {
-      if (brand !== 'all' && t.brand !== brand) return false;
-      if (status === 'open_all') {
-        if (t.status === 'resolved' || t.status === 'closed') return false;
-      } else if (t.status !== status) return false;
-      if (intent !== 'all' && t.intent !== intent) return false;
-      if (assignee === 'unassigned' && t.assigneeId) return false;
-      if (assignee !== 'all' && assignee !== 'unassigned' && t.assigneeId !== assignee) return false;
-      if (customerFilter && t.customerId !== customerFilter) return false;
-      return true;
-    });
-
-    list = [...list].sort((a, b) => {
+    if (!data) return [];
+    return [...data].sort((a, b) => {
       switch (sort) {
         case 'newest':
           return +new Date(b.createdAt) - +new Date(a.createdAt);
-        case 'oldest':
-          return +new Date(a.createdAt) - +new Date(b.createdAt);
         case 'priority':
           return a.priority - b.priority;
         default:
           return slaProgress(b.createdAt, b.slaDueAt) - slaProgress(a.createdAt, a.slaDueAt);
       }
     });
-    return list;
-  }, [brand, status, intent, assignee, sort, customerFilter]);
+  }, [data, sort]);
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -116,8 +125,16 @@ export function Queue({ mineOnly = false }: { mineOnly?: boolean }) {
 
         <div className="ml-a row gap-10">
           <span className="t-xs t-ter mono">
-            {rows.length} ticket{rows.length === 1 ? '' : 's'}
+            {loading ? '—' : `${rows.length} ticket${rows.length === 1 ? '' : 's'}`}
           </span>
+          <button
+            className="icon-btn"
+            onClick={refetch}
+            title={isLive ? `Refreshing every ${POLL_MS / 1000}s` : 'Refresh'}
+            aria-label="Refresh"
+          >
+            <RefreshCw size={13} className={refreshing ? 'spin' : undefined} />
+          </button>
           <div className="tab-bar">
             {(
               [
@@ -135,6 +152,19 @@ export function Queue({ mineOnly = false }: { mineOnly?: boolean }) {
       </div>
 
       <div className="page flush" style={{ position: 'relative' }}>
+        {error !== undefined && (
+          <div className="callout callout-warn" style={{ margin: '12px 22px 0' }}>
+            <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+            <span className="grow">
+              {apiErrorMessage(error)}
+              {data ? ' Showing the last data received.' : ''}
+            </span>
+            <button className="btn btn-sm btn-secondary" onClick={refetch}>
+              Retry
+            </button>
+          </div>
+        )}
+
         <div className="table-header">
           <button
             className={cx('checkbox', allChecked && 'checked')}
@@ -154,14 +184,31 @@ export function Queue({ mineOnly = false }: { mineOnly?: boolean }) {
           <span>SLA</span>
         </div>
 
-        {rows.length === 0 ? (
+        {loading ? (
+          <SkeletonRows />
+        ) : rows.length === 0 ? (
           <EmptyState
             glyph={<Inbox size={26} />}
-            title="Nothing in this view"
-            body="No tickets match the current filters. Every brand mailbox is still syncing — new mail lands here within seconds."
+            title={error !== undefined ? 'Nothing to show' : 'Nothing in this view'}
+            body={
+              error !== undefined
+                ? 'The queue could not be loaded. Check the server is running and try again.'
+                : isLive
+                  ? 'No tickets match the current filters. New mail lands here within seconds of arriving in a brand mailbox.'
+                  : 'No tickets match the current filters.'
+            }
           />
         ) : (
-          rows.map((t, i) => <Row key={t.id} t={t} index={i} selected={selected.has(t.id)} onToggle={toggle} onOpen={() => navigate(`/tickets/${t.id}`)} />)
+          rows.map((t, i) => (
+            <Row
+              key={t.id}
+              t={t}
+              index={i}
+              selected={selected.has(t.id)}
+              onToggle={toggle}
+              onOpen={() => navigate(`/tickets/${t.id}`)}
+            />
+          ))
         )}
 
         {selected.size > 0 && (
@@ -181,6 +228,31 @@ export function Queue({ mineOnly = false }: { mineOnly?: boolean }) {
   );
 }
 
+/** Skeletons, not a spinner — the row rhythm is visible before the data lands. */
+function SkeletonRows() {
+  return (
+    <div aria-busy="true" aria-label="Loading tickets">
+      {Array.from({ length: 8 }, (_, i) => (
+        <div className="queue-row" key={i} style={{ animationDelay: `${i * 30}ms`, cursor: 'default' }}>
+          <span />
+          <span className="skeleton" style={{ width: 30 }} />
+          <div className="col gap-6" style={{ width: '100%' }}>
+            <span className="skeleton" style={{ width: `${55 + ((i * 13) % 35)}%` }} />
+            <span className="skeleton" style={{ width: `${35 + ((i * 7) % 30)}%`, height: 9 }} />
+          </div>
+          <span className="skeleton" style={{ width: '80%' }} />
+          <span className="skeleton" style={{ width: 46 }} />
+          <span className="skeleton" style={{ width: 52 }} />
+          <span className="skeleton" style={{ width: 62 }} />
+          <span className="skeleton" style={{ width: 22, height: 22, borderRadius: '50%' }} />
+          <span className="skeleton" style={{ width: 18 }} />
+          <span className="skeleton" style={{ width: 52 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Row({
   t,
   index,
@@ -188,15 +260,12 @@ function Row({
   onToggle,
   onOpen,
 }: {
-  t: Ticket;
+  t: QueueItem;
   index: number;
   selected: boolean;
   onToggle: (id: string) => void;
   onOpen: () => void;
 }) {
-  const customer = customerById(t.customerId);
-  const owner = agentById(t.assigneeId);
-
   return (
     <div
       className={cx('queue-row', selected && 'selected')}
@@ -230,26 +299,42 @@ function Row({
       </div>
 
       <div className="queue-customer">
-        <Avatar name={customer.name} size="sm" muted />
-        <span className="queue-customer-name truncate">
-          {customer.name}
-          {customer.vip && <span style={{ color: 'var(--warning)' }}> ★</span>}
-        </span>
+        {t.customer ? (
+          <>
+            <Avatar name={t.customer.name} size="sm" muted />
+            <span className="queue-customer-name truncate">
+              {t.customer.name}
+              {t.customer.vip && <span style={{ color: 'var(--warning)' }}> ★</span>}
+            </span>
+          </>
+        ) : (
+          <span className="t-xs t-ter">—</span>
+        )}
       </div>
 
       <BrandChip brand={t.brand} />
 
       <span className="chip">{INTENT_SHORT[t.intent]}</span>
 
-      {t.order ? (
-        <span className={cx('badge', FULFILLMENT_TONE[t.order.fulfillmentStatus])}>
-          {FULFILLMENT_LABEL[t.order.fulfillmentStatus]}
+      {t.orderStatus ? (
+        <span className={cx('badge', FULFILLMENT_TONE[t.orderStatus])}>
+          {FULFILLMENT_LABEL[t.orderStatus]}
+        </span>
+      ) : t.orderNumber ? (
+        <span className="chip mono truncate" title={t.orderNumber}>
+          {t.orderNumber}
         </span>
       ) : (
         <span className="t-xs t-ter">—</span>
       )}
 
-      {owner ? <Avatar name={owner.name} size="sm" /> : <span className="t-xs t-ter" style={{ textAlign: 'center' }}>—</span>}
+      {t.assignee ? (
+        <Avatar name={t.assignee.name} size="sm" />
+      ) : (
+        <span className="t-xs t-ter" style={{ textAlign: 'center' }}>
+          —
+        </span>
+      )}
 
       <span className="mono t-xs t-ter">{shortAge(t.createdAt)}</span>
 

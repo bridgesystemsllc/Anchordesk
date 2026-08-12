@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Anchor,
@@ -16,16 +16,20 @@ import {
 } from 'lucide-react';
 import { CommandPalette } from './CommandPalette';
 import { Avatar } from './ui';
-import { ME, TICKETS } from '@/data/mock';
+import { ME } from '@/data/mock';
+import { getIngestHealth, isLive, listQueue, type IngestHealth } from '@/data/source';
+import type { QueueItem } from '@/data/view';
+import { useResource } from '@/hooks/useResource';
 import { useTheme } from '@/lib/theme';
 import { detectSurface, type Surface } from '@/lib/surface';
-import { cx } from '@/lib/utils';
+import { cx, shortAge } from '@/lib/utils';
 
-const OPEN_STATES = new Set(['new', 'open', 'pending', 'escalated']);
+const COUNT_POLL_MS = 60_000;
+const HEALTH_POLL_MS = 60_000;
 
 const NAV = [
-  { to: '/queue', label: 'Queue', icon: Inbox, count: () => TICKETS.filter((t) => OPEN_STATES.has(t.status)).length },
-  { to: '/mine', label: 'My Tickets', icon: TicketIcon, count: () => TICKETS.filter((t) => t.assigneeId === ME.id).length },
+  { to: '/queue', label: 'Queue', icon: Inbox, counter: 'open' },
+  { to: '/mine', label: 'My Tickets', icon: TicketIcon, counter: 'mine' },
   { to: '/calls', label: 'Calls', icon: Phone },
   { to: '/sheets', label: 'Sheets', icon: Table2 },
   { to: '/insights', label: 'Insights', icon: BarChart3 },
@@ -80,10 +84,69 @@ function CursorGlow() {
   return <div className="cursor-glow" ref={ref} aria-hidden />;
 }
 
+/** Live subscription health, in the shell rather than only in a monitor. */
+function SyncPill({ health }: { health: IngestHealth | undefined }) {
+  if (!health) {
+    return (
+      <div className="sync-pill">
+        <span className="status-dot" style={{ color: 'var(--text-tertiary)' }} />
+        Graph sync
+        <span className="sync-pill-meta">—</span>
+      </div>
+    );
+  }
+
+  const unhealthy = health.mailboxes.filter((m) => !m.healthy);
+  const lastSync = health.mailboxes
+    .map((m) => m.lastSyncAt)
+    .filter((v): v is string => Boolean(v))
+    .sort()
+    .at(-1);
+
+  return (
+    <div
+      className="sync-pill"
+      title={
+        unhealthy.length > 0
+          ? unhealthy.map((m) => `${m.brand}: ${m.problems.join(', ')}`).join('\n')
+          : lastSync
+            ? `All mailboxes syncing · last delta ${shortAge(lastSync)} ago`
+            : 'All mailboxes syncing'
+      }
+    >
+      <span
+        className="status-dot live"
+        style={{ color: health.ok ? 'var(--success)' : 'var(--danger)' }}
+      />
+      Graph sync
+      <span className="sync-pill-meta" style={{ color: health.ok ? undefined : 'var(--danger)' }}>
+        {health.ok ? `${health.mailboxes.length} mbx` : `${unhealthy.length} down`}
+      </span>
+    </div>
+  );
+}
+
 export function AppShell() {
   const { pathname, search } = useLocation();
   const [cmdk, setCmdk] = useState(false);
   const [surface] = useState<Surface>(detectSurface);
+
+  // Nav badges and the sync pill are shell-wide, so they load here rather than
+  // in each screen. Both pause while the tab is hidden.
+  const openFetcher = useCallback((signal: AbortSignal) => listQueue({ status: 'open_all', limit: 200 }, signal), []);
+  const { data: openTickets } = useResource<QueueItem[]>('shell-open', openFetcher, {
+    pollMs: isLive ? COUNT_POLL_MS : undefined,
+  });
+
+  const healthFetcher = useCallback((signal: AbortSignal) => getIngestHealth(signal), []);
+  const { data: health } = useResource<IngestHealth>('shell-health', healthFetcher, {
+    pollMs: isLive ? HEALTH_POLL_MS : undefined,
+  });
+
+  const counts: Record<string, number | undefined> = {
+    open: openTickets?.length,
+    mine: openTickets?.filter((t) => t.assignee?.id === ME.id).length,
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -120,7 +183,7 @@ export function AppShell() {
 
           <div className="nav-section-label">Workspace</div>
           {NAV.map(({ to, label, icon: Icon, ...rest }) => {
-            const count = 'count' in rest ? (rest.count as () => number)() : undefined;
+            const count = 'counter' in rest ? counts[rest.counter as string] : undefined;
             return (
               <NavLink key={to} to={to} className={({ isActive }) => cx('nav-item', isActive && 'active')}>
                 <Icon size={15} strokeWidth={1.9} />
@@ -131,11 +194,7 @@ export function AppShell() {
           })}
 
           <div className="sidebar-footer">
-            <div className="sync-pill">
-              <span className="status-dot live" />
-              Graph sync
-              <span className="sync-pill-meta">5 mbx</span>
-            </div>
+            <SyncPill health={health} />
             <div className="nav-item" style={{ cursor: 'default' }}>
               <Avatar name={ME.name} size="sm" />
               <span className="col" style={{ lineHeight: 1.2, overflow: 'hidden' }}>

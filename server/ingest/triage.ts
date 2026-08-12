@@ -50,7 +50,11 @@ const INTENT_KEYWORDS: Record<Exclude<Intent, 'other'>, RegExp[]> = {
   damage: [
     /\b(damaged?|broken|shattered|cracked|leaking|leaked|spilled|dented|melted)\b/i,
     /\b(arrived|came)\s+(in\s+pieces|broken|damaged)\b/i,
-    /\b(defect(ive)?|pump (doesn'?t|not|won'?t) (work|dispense))\b/i,
+    /\bdefect(ive)?\b/i,
+    // Dispenser failures are a recurring KarEve defect and rarely phrased as
+    // "defective" — "the pump clicks but nothing comes out" is the real wording.
+    /\b(pump|nozzle|dispenser)\b[^.!?]{0,40}\b(not|n[’']t|nothing|won[’']?t|doesn[’']?t|stopped)\b/i,
+    /\bnothing (comes|came) out\b/i,
   ],
   refund: [
     /\b(refund|charged twice|double charge[d]?|duplicate charge|money back|reimburse)\b/i,
@@ -67,7 +71,11 @@ const INTENT_KEYWORDS: Record<Exclude<Intent, 'other'>, RegExp[]> = {
     /\b(marked (as )?delivered|never (arrived|showed))\b/i,
   ],
   product_q: [
-    /\b(is it safe|can i use|how (do|should) i (use|apply)|ingredients?|shade match|which shade|suitable for|will it)\b/i,
+    /\b(ingredients?|shade match|which shade|suitable for)\b/i,
+    /\bis\b[^.!?]{0,40}\bsafe\b/i,
+    /\b(can|should|may) (i|you|we) (use|apply|mix|wear|combine|layer)\b/i,
+    /\bhow (long|often|much|many|do i|should i)\b/i,
+    /\bwill (it|this|they|the)\b/i,
     /\b(pregnan|allerg(y|ic)|sensitive skin|comedogenic|cruelty[- ]free|vegan)\b/i,
   ],
 };
@@ -81,9 +89,22 @@ const INTENT_PRECEDENCE: Exclude<Intent, 'other'>[] = [
   'product_q',
 ];
 
+/**
+ * Phrases where a customer names an outcome in order to rule it out. Without
+ * this, "I don't want a refund, I just want the product" triages as a refund —
+ * the opposite of what they asked for, with the wrong priority and the wrong
+ * escalation route attached.
+ */
+const NEGATED_OUTCOME =
+  /\b(?:do\s?n[’']?t|do not|does\s?n[’']?t|did\s?n[’']?t|not|no|never|rather than|instead of)\s+(?:want(?:ing)?\s+|need\s+|ask(?:ing)?\s+for\s+|look(?:ing)?\s+for\s+|request(?:ing)?\s+)?(?:a\s+|an\s+|the\s+|any\s+)?(?:refunds?|returns?|replacements?|exchanges?|money\s+back)\b/gi;
+
+export function stripNegatedOutcomes(text: string): string {
+  return text.replace(NEGATED_OUTCOME, ' ');
+}
+
 export function detectIntent(subject: string, body: string): Intent {
   // Subject lines are short and deliberate — weight them above body prose.
-  const haystack = `${subject}\n${subject}\n${body}`;
+  const haystack = stripNegatedOutcomes(`${subject}\n${subject}\n${body}`);
 
   const scores = new Map<Exclude<Intent, 'other'>, number>();
   for (const [intent, patterns] of Object.entries(INTENT_KEYWORDS) as [

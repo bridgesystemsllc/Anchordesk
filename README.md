@@ -26,8 +26,12 @@ the Desk drafts, a human sends.
 | Settings & Admin | `/settings` | Built · all nine sections |
 
 **Backend** — Graph email ingest is live (Day 2–3). Webhook + delta reconciliation, threading,
-idempotency, subscription auto-renewal. The frontend still reads mock data; wiring it to the API is
-Day 4.
+idempotency, subscription auto-renewal.
+
+**Queue and Ticket view read live data** (Day 4). Set `VITE_API_URL` and the app runs on real
+tickets; leave it unset and it runs on the bundled demo dataset with no backend at all. Both modes
+render the same view models, so the UI never knows which one it is looking at — which keeps the
+design reviewable without a database or admin consent.
 
 ---
 
@@ -37,10 +41,14 @@ Day 4.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5180
+npm run dev      # http://localhost:5180 — demo dataset, no backend needed
 npm run build
 npm run typecheck
 ```
+
+To run against live tickets, set `VITE_API_URL` (and `VITE_API_TOKEN` to match the server's
+`API_AUTH_TOKEN`) before `npm run dev`. **`VITE_*` values are compiled into the bundle** — that
+token is a development convenience, never a production secret. Real auth is Entra SSO.
 
 Add `?surface=teams` to any URL to preview the chrome-suppressed Teams-tab layout locally.
 
@@ -50,11 +58,17 @@ Add `?surface=teams` to any URL to preview the chrome-suppressed Teams-tab layou
 cp .env.example .env         # then fill in Entra credentials + mailboxes
 docker compose up -d         # or use a local Postgres
 npm run db:migrate
+npm run db:seed              # synthetic mail through the real ingest pipeline
 npm run server:dev           # http://localhost:4180
 
 npm run ingest:backfill -- 30   # one-time historical pull, once consent lands
-npm test                        # 93 tests
+npm test                        # 125 tests
 ```
+
+`db:seed` pushes synthetic Graph messages through normalization, triage, threading and
+idempotency rather than inserting rows — so what lands in the database is exactly what live mail
+would produce, and the UI can be driven against real data before admin consent exists. It is safe
+to re-run.
 
 Integration tests for the write path need a throwaway database:
 
@@ -148,8 +162,10 @@ change is a variable swap, never a component change.
 src/                     frontend
   components/    AppShell · CommandPalette · Modal · EscalateModal · LogCallModal · ui primitives
   screens/       Login · Queue · TicketView · Calls · Sheets · Insights · Settings
-  data/          types.ts (mirrors §5 schema) · brands.ts (config-as-data) · mock.ts
-  lib/           theme.tsx · surface.ts · utils.ts
+  data/          view.ts (view models) · source.ts (live/demo switch)
+                 fromApi.ts · fromMock.ts (adapters) · brands.ts · mock.ts · types.ts
+  hooks/         useResource.ts (fetch, abort, poll)
+  lib/           api.ts · theme.tsx · surface.ts · utils.ts
   styles/        tokens.css (both themes) · app.css (component layer)
 
 server/                  ingest + API
@@ -178,8 +194,9 @@ tab problem can never block launch.
 Entra app registration and admin consent, with the application access policy above — nothing here
 runs until that lands, and it is the one item not in our own hands.
 
-Then: wire the Queue to `/api/tickets` (Day 4) → send replies via Graph `createReply` → `send`, with
-outbound idempotency (Day 5) → Shopify order enrichment (Days 6–7).
+Then: send replies via Graph `createReply` → `send`, with outbound idempotency (Day 5) → Shopify
+order enrichment (Days 6–7). Calls, Sheets and Insights still read the demo dataset; they wire up
+alongside the features that fill them.
 
 Triage is currently rule-based and lives behind pure, tested functions in `server/ingest/triage.ts`.
 The Day 10 Claude triage agent replaces one call site in `normalize.ts`, not the pipeline.
