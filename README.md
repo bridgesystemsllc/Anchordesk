@@ -11,9 +11,7 @@ the Desk drafts, a human sends.
 
 ## Status
 
-This repository currently holds the **frontend**: the full app shell and every screen from §6 of the
-spec, running against a demo dataset shaped exactly like the Postgres model in §5. No Graph, Shopify
-or Postgres wiring yet — those are Days 1–7 of the sprint.
+**Frontend** — every screen from §6, running against a demo dataset shaped like the §5 model.
 
 | Screen | Route | State |
 |---|---|---|
@@ -27,18 +25,92 @@ or Postgres wiring yet — those are Days 1–7 of the sprint.
 | Insights | `/insights` | Built · mock aggregates |
 | Settings & Admin | `/settings` | Built · all nine sections |
 
+**Backend** — Graph email ingest is live (Day 2–3). Webhook + delta reconciliation, threading,
+idempotency, subscription auto-renewal. The frontend still reads mock data; wiring it to the API is
+Day 4.
+
 ---
 
 ## Running it
 
+### Frontend
+
 ```bash
 npm install
 npm run dev      # http://localhost:5180
-npm run build    # tsc -b && vite build
+npm run build
 npm run typecheck
 ```
 
 Add `?surface=teams` to any URL to preview the chrome-suppressed Teams-tab layout locally.
+
+### Server
+
+```bash
+cp .env.example .env         # then fill in Entra credentials + mailboxes
+docker compose up -d         # or use a local Postgres
+npm run db:migrate
+npm run server:dev           # http://localhost:4180
+
+npm run ingest:backfill -- 30   # one-time historical pull, once consent lands
+npm test                        # 93 tests
+```
+
+Integration tests for the write path need a throwaway database:
+
+```bash
+createdb anchor_test
+TEST_DATABASE_URL=postgres://localhost/anchor_test npm test
+```
+
+Without a public HTTPS callback URL, set `ENABLE_SUBSCRIPTIONS=false` and let delta reconciliation
+carry ingest on its own.
+
+---
+
+## Graph email ingest
+
+Two independent paths write the same tickets, because one of them will eventually fail.
+
+**Webhook** — `POST /api/graph/notifications`. Graph validates the endpoint by POSTing a
+`validationToken` that must be echoed as `text/plain`; every notification is then checked against a
+per-mailbox `clientState` HMAC in constant time, acknowledged with `202` before any work, and
+processed on a serial queue.
+
+**Delta reconciliation** — every 15 minutes against each mailbox's stored `deltaLink`. This is the
+safety net. Webhooks are best-effort, and without this the system can stop working without anyone
+noticing. Inbox *and* Sent Items are both reconciled, so a reply an agent sends from Outlook still
+lands on the ticket — the mitigation for two people working the same thread.
+
+**Subscriptions** last 10,080 minutes (under 7 days) for Outlook messages — not the 3 days the spec
+assumed. They are created for 6 days and renewed with 24 hours to spare, so a full day of renewal
+failures still can't drop one. Lifecycle notifications (`subscriptionRemoved`,
+`reauthorizationRequired`, `missed`) are handled at `POST /api/graph/lifecycle`; a `missed` event
+triggers an immediate delta pass rather than waiting for the timer.
+
+**Idempotency** is a unique index on `graph_message_id` plus a transaction-scoped advisory lock keyed
+on `(mailbox, conversationId)`. The lock serialises ticket creation for a thread so two simultaneous
+notifications can't produce two tickets; the index is the last line of defence. A duplicate reply to
+a customer is embarrassing; a duplicate refund is worse.
+
+**Threading** is Graph's own `conversationId` — no MIME parsing. A reply on a resolved ticket reopens
+it; a reply on one closed more than 14 days ago starts a fresh ticket instead.
+
+Health lives at `GET /api/health/ingest` — per-mailbox subscription expiry, last sync, last error.
+Point the monitor at it and page on a non-200.
+
+### Permissions — the spec was wrong here
+
+`Mail.ReadWrite.Shared` and `Mail.Send.Shared` are **delegated-only** and cannot be granted app-only.
+App-only access needs:
+
+- `Mail.ReadWrite` (Application)
+- `Mail.Send` (Application)
+- `User.Read.All` (Application)
+
+Those reach **every mailbox in the tenant**. They must be scoped with an Exchange application access
+policy limited to the five brand addresses — see `.env.example` for the `New-ApplicationAccessPolicy`
+command. Treat that as part of the consent request, not a follow-up.
 
 ---
 
@@ -73,12 +145,20 @@ change is a variable swap, never a component change.
 ## Structure
 
 ```
-src/
+src/                     frontend
   components/    AppShell · CommandPalette · Modal · EscalateModal · LogCallModal · ui primitives
   screens/       Login · Queue · TicketView · Calls · Sheets · Insights · Settings
   data/          types.ts (mirrors §5 schema) · brands.ts (config-as-data) · mock.ts
   lib/           theme.tsx · surface.ts · utils.ts
   styles/        tokens.css (both themes) · app.css (component layer)
+
+server/                  ingest + API
+  db/            schema.ts · migrations/ · migrate.ts
+  graph/         auth · client (429 backoff) · subscriptions · types
+  ingest/        normalize · triage · html · store · delta · pipeline · mailboxes
+  routes/        notifications (webhook + lifecycle) · health · tickets
+  jobs/          scheduler (renewal + reconciliation)
+  scripts/       backfill.ts
 ```
 
 **Config is data, not constants.** Mailboxes, escalation routing and Excel bindings are the three
@@ -95,10 +175,11 @@ tab problem can never block launch.
 
 ## Next
 
-Days 1–7 of the sprint, in order: Entra app registration and admin consent → Graph mail ingest with
-idempotency on `graph_message_id` → all five mailboxes with subscription auto-renewal → wire the
-Queue to real tickets → send replies via Graph `createReply` → Shopify order enrichment.
+Entra app registration and admin consent, with the application access policy above — nothing here
+runs until that lands, and it is the one item not in our own hands.
 
-The subscription renewal job is the highest-severity item in the build. Graph change-notification
-subscriptions expire every three days, and without renewal plus a delta-query safety net, this
-system stops working silently.
+Then: wire the Queue to `/api/tickets` (Day 4) → send replies via Graph `createReply` → `send`, with
+outbound idempotency (Day 5) → Shopify order enrichment (Days 6–7).
+
+Triage is currently rule-based and lives behind pure, tested functions in `server/ingest/triage.ts`.
+The Day 10 Claude triage agent replaces one call site in `normalize.ts`, not the pipeline.

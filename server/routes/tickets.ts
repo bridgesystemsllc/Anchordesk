@@ -1,0 +1,106 @@
+import { Router } from 'express';
+import { and, asc, desc, eq, inArray, isNull, lt, type SQL } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/client';
+import { csCustomers, csMessages, csTickets } from '../db/schema';
+
+export const ticketsRouter = Router();
+
+const OPEN_STATES = ['new', 'open', 'pending', 'escalated'] as const;
+
+const listQuery = z.object({
+  status: z.enum(['new', 'open', 'pending', 'escalated', 'resolved', 'closed', 'open_all']).default('open_all'),
+  brand: z.enum(['CD', 'DB', 'BOC', 'AMBI', 'AF']).optional(),
+  intent: z.enum(['wismo', 'return', 'refund', 'damage', 'product_q', 'other']).optional(),
+  assignee: z.string().min(1).optional(),
+  unassigned: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  /** Keyset pagination: pass the previous page's last updatedAt. */
+  before: z.coerce.date().optional(),
+});
+
+ticketsRouter.get('/tickets', async (req, res) => {
+  const parsed = listQuery.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_query', issues: parsed.error.issues });
+    return;
+  }
+  const q = parsed.data;
+
+  const filters: SQL[] = [];
+  if (q.status === 'open_all') filters.push(inArray(csTickets.status, [...OPEN_STATES]));
+  else filters.push(eq(csTickets.status, q.status));
+  if (q.brand) filters.push(eq(csTickets.brandId, q.brand));
+  if (q.intent) filters.push(eq(csTickets.intent, q.intent));
+  if (q.assignee) filters.push(eq(csTickets.assigneeId, q.assignee));
+  if (q.before) filters.push(lt(csTickets.updatedAt, q.before));
+  if (q.unassigned) filters.push(isNull(csTickets.assigneeId));
+
+  const rows = await db
+    .select({
+      id: csTickets.id,
+      number: csTickets.number,
+      brand: csTickets.brandId,
+      subject: csTickets.subject,
+      status: csTickets.status,
+      priority: csTickets.priority,
+      channel: csTickets.channel,
+      intent: csTickets.intent,
+      sentiment: csTickets.sentiment,
+      orderNumber: csTickets.orderNumber,
+      mailbox: csTickets.mailbox,
+      assigneeId: csTickets.assigneeId,
+      unread: csTickets.unread,
+      slaDueAt: csTickets.slaDueAt,
+      lastMessageAt: csTickets.lastMessageAt,
+      createdAt: csTickets.createdAt,
+      updatedAt: csTickets.updatedAt,
+      tags: csTickets.tags,
+      customerId: csCustomers.id,
+      customerName: csCustomers.name,
+      customerEmail: csCustomers.email,
+      customerVip: csCustomers.vip,
+    })
+    .from(csTickets)
+    .leftJoin(csCustomers, eq(csTickets.customerId, csCustomers.id))
+    .where(and(...filters))
+    .orderBy(desc(csTickets.updatedAt))
+    .limit(q.limit);
+
+  res.json({
+    tickets: rows,
+    nextBefore: rows.length === q.limit ? rows[rows.length - 1]?.updatedAt : null,
+  });
+});
+
+ticketsRouter.get('/tickets/:id', async (req, res) => {
+  const id = z.string().uuid().safeParse(req.params.id);
+  if (!id.success) {
+    res.status(400).json({ error: 'invalid_id' });
+    return;
+  }
+
+  const [ticket] = await db
+    .select()
+    .from(csTickets)
+    .where(eq(csTickets.id, id.data))
+    .limit(1);
+
+  if (!ticket) {
+    res.status(404).json({ error: 'not_found' });
+    return;
+  }
+
+  const [messages, customer] = await Promise.all([
+    db
+      .select()
+      .from(csMessages)
+      .where(eq(csMessages.ticketId, ticket.id))
+      .orderBy(asc(csMessages.sentAt)),
+    ticket.customerId
+      ? db.select().from(csCustomers).where(eq(csCustomers.id, ticket.customerId)).limit(1)
+      : Promise.resolve([]),
+  ]);
+
+  res.json({ ticket, customer: customer[0] ?? null, messages });
+});
