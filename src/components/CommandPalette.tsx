@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -12,8 +12,10 @@ import {
   Ticket as TicketIcon,
   User,
 } from 'lucide-react';
-import { CUSTOMERS, TICKETS } from '@/data/mock';
+import { searchTickets } from '@/data/source';
+import type { QueueItem } from '@/data/view';
 import { BRANDS } from '@/data/brands';
+import { useResource } from '@/hooks/useResource';
 import { useTheme } from '@/lib/theme';
 import { cx } from '@/lib/utils';
 
@@ -32,6 +34,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { resolved, setPref } = useTheme();
+
+  // Loaded once when the palette opens; searching filters that page locally.
+  const fetcher = useCallback((signal: AbortSignal) => searchTickets(signal), []);
+  const { data: tickets, loading } = useResource<QueueItem[]>('cmdk', fetcher);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -65,12 +71,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const needle = q.trim().toLowerCase();
     if (!needle) return nav;
 
-    const tickets: Item[] = TICKETS.filter(
-      (t) =>
-        String(t.number).includes(needle) ||
-        t.subject.toLowerCase().includes(needle) ||
-        (t.orderNumber ?? '').toLowerCase().includes(needle),
-    )
+    const pool = tickets ?? [];
+
+    const ticketHits: Item[] = pool
+      .filter(
+        (t) =>
+          String(t.number).includes(needle) ||
+          t.subject.toLowerCase().includes(needle) ||
+          (t.orderNumber ?? '').toLowerCase().includes(needle),
+      )
       .slice(0, 6)
       .map((t) => ({
         id: t.id,
@@ -81,25 +90,34 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         run: go(`/tickets/${t.id}`),
       }));
 
-    const customers: Item[] = CUSTOMERS.filter(
-      (c) => c.name.toLowerCase().includes(needle) || c.email.toLowerCase().includes(needle),
-    )
-      .slice(0, 4)
-      .map((c) => ({
-        id: c.id,
+    // Customers are derived from the loaded tickets rather than a separate
+    // directory, so the palette never offers someone with nothing to open.
+    const seen = new Set<string>();
+    const customerHits: Item[] = [];
+    for (const t of pool) {
+      if (!t.customer || seen.has(t.customer.id)) continue;
+      const matches =
+        t.customer.name.toLowerCase().includes(needle) ||
+        t.customer.email.toLowerCase().includes(needle);
+      if (!matches) continue;
+      seen.add(t.customer.id);
+      customerHits.push({
+        id: t.customer.id,
         group: 'Customers',
-        label: c.name,
-        meta: c.email,
+        label: t.customer.name,
+        meta: t.customer.email,
         icon: <User size={15} />,
-        run: go(`/queue?customer=${c.id}`),
-      }));
+        run: go(`/tickets/${t.id}`),
+      });
+      if (customerHits.length >= 4) break;
+    }
 
     return [
-      ...tickets,
-      ...customers,
+      ...ticketHits,
+      ...customerHits,
       ...nav.filter((n) => n.label.toLowerCase().includes(needle)),
     ];
-  }, [q, navigate, onClose, resolved, setPref]);
+  }, [q, tickets, navigate, onClose, resolved, setPref]);
 
   useEffect(() => setActive(0), [q]);
 
@@ -144,7 +162,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         <div className="cmdk-list">
           {items.length === 0 && (
             <div className="cmdk-group" style={{ padding: '18px 10px' }}>
-              No matches for “{q}”
+              {loading ? 'Loading tickets…' : `No matches for “${q}”`}
             </div>
           )}
           {items.map((it, i) => {

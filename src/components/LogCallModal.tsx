@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Phone, Sparkles } from 'lucide-react';
 import { Modal } from './Modal';
-import type { Ticket } from '@/data/types';
-import { customerById } from '@/data/mock';
+import type { TicketDetail } from '@/data/view';
 import { cx } from '@/lib/utils';
 
 const OUTCOMES = [
@@ -13,12 +12,12 @@ const OUTCOMES = [
 ] as const;
 
 /** Path A from §4 — manual logging. Target: under 20 seconds per call. */
-export function LogCallModal({ ticket, onClose }: { ticket?: Ticket; onClose: () => void }) {
+export function LogCallModal({ ticket, onClose }: { ticket?: TicketDetail; onClose: () => void }) {
   const [direction, setDirection] = useState<'inbound' | 'outbound'>('inbound');
   const [outcome, setOutcome] = useState<string>('resolved');
   const [minutes, setMinutes] = useState('4');
   const [notes, setNotes] = useState('');
-  const customer = ticket ? customerById(ticket.customerId) : null;
+  const customer = ticket?.customer ?? null;
 
   return (
     <Modal

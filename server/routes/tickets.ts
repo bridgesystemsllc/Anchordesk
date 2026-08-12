@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, asc, desc, eq, inArray, isNull, lt, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
 import { csCustomers, csMessages, csTickets } from '../db/schema';
@@ -56,6 +56,19 @@ ticketsRouter.get('/tickets', async (req, res) => {
       createdAt: csTickets.createdAt,
       updatedAt: csTickets.updatedAt,
       tags: csTickets.tags,
+      // The queue shows a one-line preview under each subject. Derived from the
+      // newest message rather than denormalized onto the ticket, so it can
+      // never drift out of sync with the thread.
+      preview: sql<string | null>`(
+        select left(m.body_text, 200)
+        from cs_messages m
+        where m.ticket_id = ${csTickets.id}
+        order by m.sent_at desc nulls last, m.created_at desc
+        limit 1
+      )`,
+      messageCount: sql<number>`(
+        select count(*)::int from cs_messages m where m.ticket_id = ${csTickets.id}
+      )`,
       customerId: csCustomers.id,
       customerName: csCustomers.name,
       customerEmail: csCustomers.email,

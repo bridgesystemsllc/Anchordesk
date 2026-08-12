@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { ArrowUpRight, Hash, Send, Sparkles } from 'lucide-react';
 import { Modal } from './Modal';
 import { Avatar } from './ui';
-import { AGENTS, ME, customerById } from '@/data/mock';
+import { AGENTS, ME } from '@/data/mock';
 import { BRANDS } from '@/data/brands';
-import type { Ticket } from '@/data/types';
+import type { TicketDetail } from '@/data/view';
 import { cx, usd } from '@/lib/utils';
 
 const CHANNELS = [
@@ -13,11 +13,11 @@ const CHANNELS = [
   { id: 'ch-ful', name: '#fulfillment-escalations', team: 'Supply Chain' },
 ];
 
-export function EscalateModal({ ticket, onClose }: { ticket: Ticket; onClose: () => void }) {
+export function EscalateModal({ ticket, onClose }: { ticket: TicketDetail; onClose: () => void }) {
   const [target, setTarget] = useState<string>('u7');
   const [mode, setMode] = useState<'person' | 'channel'>('person');
   const [reason, setReason] = useState('Repeat packaging damage — needs a fulfillment fix, not a one-off replacement');
-  const customer = customerById(ticket.customerId);
+  const customer = ticket.customer;
   const brand = BRANDS[ticket.brand];
 
   const targetName =

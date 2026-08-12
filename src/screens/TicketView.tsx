@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
   BookOpen,
@@ -25,32 +26,62 @@ import { EscalateModal } from '@/components/EscalateModal';
 import { LogCallModal } from '@/components/LogCallModal';
 import { Avatar, BrandChip, EmptyState, KeyVal, SlaRing, StatusBadge } from '@/components/ui';
 import { BRANDS, INTENT_LABEL } from '@/data/brands';
-import { TICKETS, agentById, customerById, ticketById } from '@/data/mock';
+import { getTicket, isLive } from '@/data/source';
 import type { Citation, Message } from '@/data/types';
+import type { TicketDetail } from '@/data/view';
+import { useResource } from '@/hooks/useResource';
+import { ApiError, apiErrorMessage } from '@/lib/api';
 import { clockTime, cx, fullStamp, shortAge, usd } from '@/lib/utils';
 
 const TRACK_ORDER = ['unfulfilled', 'in_transit', 'out_for_delivery', 'delivered'] as const;
 const TRACK_LABELS = ['Placed', 'In transit', 'Out for del.', 'Delivered'];
 
 export function TicketView() {
-  const { id } = useParams();
+  const { id = '' } = useParams();
   const navigate = useNavigate();
-  const ticket = id ? ticketById(id) : undefined;
 
-  const [draft, setDraft] = useState(ticket?.aiDraft ?? '');
+  const fetcher = useCallback((signal: AbortSignal) => getTicket(id, signal), [id]);
+  const { data: ticket, error, loading, refreshing, refetch } = useResource<TicketDetail | null>(
+    id,
+    fetcher,
+    { enabled: Boolean(id) },
+  );
+
+  const [draft, setDraft] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [escalating, setEscalating] = useState(false);
   const [logging, setLogging] = useState(false);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const [sent, setSent] = useState(false);
 
-  const similar = useMemo(
-    () =>
-      ticket
-        ? TICKETS.filter((t) => t.id !== ticket.id && t.intent === ticket.intent).slice(0, 3)
-        : [],
-    [ticket],
-  );
+  if (loading) return <TicketSkeleton />;
+
+  if (error !== undefined && !ticket) {
+    const notFound = error instanceof ApiError && error.isNotFound;
+    return (
+      <div className="page">
+        <EmptyState
+          glyph={notFound ? <Mail size={26} /> : <AlertTriangle size={26} />}
+          title={notFound ? 'Ticket not found' : 'Could not load this ticket'}
+          body={
+            notFound
+              ? 'It may have been merged or closed. Head back to the queue and try again.'
+              : apiErrorMessage(error)
+          }
+          action={
+            <div className="row gap-8">
+              <button className="btn btn-secondary" onClick={refetch}>
+                <RefreshCw size={14} /> Retry
+              </button>
+              <Link to="/queue" className="btn btn-ghost">
+                <ArrowLeft size={14} /> Back to queue
+              </Link>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
 
   if (!ticket) {
     return (
@@ -69,9 +100,10 @@ export function TicketView() {
     );
   }
 
-  const customer = customerById(ticket.customerId);
-  const owner = agentById(ticket.assigneeId);
+  const { customer, assignee: owner } = ticket;
   const brand = BRANDS[ticket.brand];
+  const body = draft ?? ticket.aiDraft ?? '';
+  const closed = ticket.status === 'resolved' || ticket.status === 'closed';
 
   const regenerate = () => {
     setGenerating(true);
@@ -91,6 +123,9 @@ export function TicketView() {
             </button>
             <h1 className="ticket-subject truncate">{ticket.subject}</h1>
             <div className="ml-a row gap-6">
+              <button className="icon-btn" onClick={refetch} aria-label="Refresh">
+                <RefreshCw size={13} className={refreshing ? 'spin' : undefined} />
+              </button>
               <button className="btn btn-sm btn-secondary" onClick={() => setLogging(true)}>
                 <Phone size={13} /> Log call
               </button>
@@ -115,21 +150,31 @@ export function TicketView() {
               {owner ? (
                 <span className="row gap-6">
                   <Avatar name={owner.name} size="sm" />
-                  <span className="t-sm">{owner.name}</span>
+                  <span className="t-sm truncate" style={{ maxWidth: 160 }}>
+                    {owner.name}
+                  </span>
                 </span>
               ) : (
                 <button className="btn btn-sm btn-ghost">
                   <User size={13} /> Assign
                 </button>
               )}
-              {ticket.status !== 'resolved' && ticket.status !== 'closed' && (
-                <SlaRing createdAt={ticket.createdAt} dueAt={ticket.slaDueAt} />
-              )}
+              {!closed && <SlaRing createdAt={ticket.createdAt} dueAt={ticket.slaDueAt} />}
             </div>
           </div>
         </header>
 
         <div className="ticket-scroll">
+          {error !== undefined && (
+            <div className="callout callout-warn" style={{ marginBottom: 14 }}>
+              <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+              <span className="grow">{apiErrorMessage(error)} Showing the last data received.</span>
+              <button className="btn btn-sm btn-secondary" onClick={refetch}>
+                Retry
+              </button>
+            </div>
+          )}
+
           {ticket.aiSummary.length > 0 && (
             <div className="ai-summary fade-up">
               <div className="ai-summary-head">
@@ -158,9 +203,9 @@ export function TicketView() {
                   id: 'sent-now',
                   kind: 'outbound',
                   authorName: 'You',
-                  body: draft,
+                  body,
                   at: new Date().toISOString(),
-                  draftedByAi: true,
+                  draftedByAi: Boolean(ticket.aiDraft),
                   editedByHuman: true,
                 }}
               />
@@ -170,16 +215,20 @@ export function TicketView() {
 
         <div className="composer">
           <div className="composer-head">
-            <span className="composer-label">Reply to {customer.name.split(' ')[0]}</span>
-            {ticket.aiDraftReady && !sent && (
+            <span className="composer-label">
+              Reply to {customer.name.split(' ')[0] ?? 'customer'}
+            </span>
+            {ticket.aiDraft && !sent && (
               <span className="badge badge-accent">
                 <Sparkles size={10} /> AI draft
               </span>
             )}
             <div className="ml-a row gap-6">
-              <button className="btn btn-sm btn-ghost" onClick={regenerate} disabled={generating}>
-                <RefreshCw size={12} className={generating ? 'spin' : undefined} /> Regenerate
-              </button>
+              {ticket.aiDraft && (
+                <button className="btn btn-sm btn-ghost" onClick={regenerate} disabled={generating}>
+                  <RefreshCw size={12} className={generating ? 'spin' : undefined} /> Regenerate
+                </button>
+              )}
               <span className="t-xs t-ter">from {brand.mailbox}</span>
             </div>
           </div>
@@ -187,12 +236,12 @@ export function TicketView() {
           <div className={cx('composer-box', generating && 'generating')}>
             <textarea
               className="composer-textarea"
-              value={draft}
+              value={body}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={
-                ticket.aiDraftReady
+                ticket.aiDraft
                   ? 'AI draft loading…'
-                  : 'No draft — this one needs a human. Write your reply here.'
+                  : 'No draft yet — AI drafting lands on Day 11. Write your reply here.'
               }
             />
 
@@ -218,11 +267,14 @@ export function TicketView() {
                 <StickyNote size={14} />
               </button>
               <span className="t-xs t-ter ml-a">
-                Threads into the existing conversation · lands in {brand.mailbox} Sent
+                {isLive
+                  ? 'Sending lands on Day 5 — this composer does not send yet'
+                  : `Threads into the existing conversation · lands in ${brand.mailbox} Sent`}
               </span>
               <button
                 className="btn btn-sm btn-primary"
-                disabled={!draft.trim() || sent}
+                disabled={!body.trim() || sent || isLive}
+                title={isLive ? 'Outbound send is not wired yet (Day 5)' : undefined}
                 onClick={() => setSent(true)}
               >
                 {sent ? <Check size={13} /> : <Send size={13} />}
@@ -243,7 +295,7 @@ export function TicketView() {
               <Avatar name={customer.name} size="lg" />
               <div className="col" style={{ minWidth: 0, lineHeight: 1.35 }}>
                 <span className="row gap-4" style={{ fontWeight: 600, fontSize: 13.5 }}>
-                  {customer.name}
+                  <span className="truncate">{customer.name}</span>
                   {customer.vip && <Star size={11} style={{ color: 'var(--warning)' }} fill="currentColor" />}
                 </span>
                 <span className="t-xs t-ter truncate">{customer.email}</span>
@@ -251,8 +303,15 @@ export function TicketView() {
             </div>
             <KeyVal k="Lifetime orders" v={<span className="mono">{customer.lifetimeOrders}</span>} />
             <KeyVal k="Lifetime value" v={<span className="mono">{usd(customer.lifetimeValue)}</span>} />
-            <KeyVal k="Customer since" v={new Date(customer.since).getFullYear()} />
+            {customer.since && (
+              <KeyVal k="Customer since" v={new Date(customer.since).getFullYear()} />
+            )}
             {customer.phone && <KeyVal k="Phone" v={<span className="mono t-sm">{customer.phone}</span>} />}
+            {isLive && customer.lifetimeOrders === 0 && (
+              <p className="t-xs t-ter" style={{ lineHeight: 1.5 }}>
+                Order history arrives with Shopify enrichment (Days 6–7).
+              </p>
+            )}
           </div>
         </div>
 
@@ -319,10 +378,21 @@ export function TicketView() {
               <Package size={11} /> Order
             </div>
             <div className="rail-body">
-              <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
-                No order matched this customer. Search Shopify by email or name to attach one.
-              </p>
-              <button className="btn btn-sm btn-secondary">Find order</button>
+              {ticket.orderNumber ? (
+                <>
+                  <KeyVal k="Referenced" v={<span className="mono">{ticket.orderNumber}</span>} />
+                  <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+                    Extracted from the message. Full order detail arrives with Shopify enrichment.
+                  </p>
+                </>
+              ) : (
+                <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+                  No order number found in this thread. Search Shopify by email or name to attach one.
+                </p>
+              )}
+              <button className="btn btn-sm btn-secondary" disabled={isLive}>
+                Find order
+              </button>
             </div>
           </div>
         )}
@@ -343,13 +413,13 @@ export function TicketView() {
           </div>
         )}
 
-        {similar.length > 0 && (
+        {ticket.similar.length > 0 && (
           <div className="rail-card">
             <div className="rail-head">
               <MessageSquare size={11} /> Similar past tickets
             </div>
             <div className="rail-body">
-              {similar.map((s) => (
+              {ticket.similar.map((s) => (
                 <Link key={s.id} to={`/tickets/${s.id}`} className="col gap-4" style={{ lineHeight: 1.35 }}>
                   <span className="t-sm truncate">{s.subject}</span>
                   <span className="row gap-6 t-xs t-ter">
@@ -379,6 +449,37 @@ export function TicketView() {
       {escalating && <EscalateModal ticket={ticket} onClose={() => setEscalating(false)} />}
       {logging && <LogCallModal ticket={ticket} onClose={() => setLogging(false)} />}
       {openCitation && <CitationModal citation={openCitation} onClose={() => setOpenCitation(null)} />}
+    </div>
+  );
+}
+
+function TicketSkeleton() {
+  return (
+    <div className="ticket-layout" aria-busy="true" aria-label="Loading ticket">
+      <section className="ticket-main">
+        <header className="ticket-head">
+          <span className="skeleton" style={{ width: '52%', height: 22 }} />
+          <div className="row gap-8">
+            <span className="skeleton" style={{ width: 46 }} />
+            <span className="skeleton" style={{ width: 64 }} />
+            <span className="skeleton" style={{ width: 78 }} />
+          </div>
+        </header>
+        <div className="ticket-scroll col gap-16">
+          <span className="skeleton" style={{ height: 74, borderRadius: 16 }} />
+          {[72, 96, 58].map((h, i) => (
+            <div className="col gap-6" key={i}>
+              <span className="skeleton" style={{ width: 160, height: 10 }} />
+              <span className="skeleton" style={{ height: h, borderRadius: 12 }} />
+            </div>
+          ))}
+        </div>
+      </section>
+      <aside className="ticket-rail">
+        {[128, 190, 96].map((h, i) => (
+          <span className="skeleton" key={i} style={{ height: h, borderRadius: 12 }} />
+        ))}
+      </aside>
     </div>
   );
 }

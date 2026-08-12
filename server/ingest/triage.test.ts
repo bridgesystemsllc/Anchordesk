@@ -6,6 +6,7 @@ import {
   estimateSentiment,
   extractOrderNumber,
   slaDueAt,
+  stripNegatedOutcomes,
 } from './triage';
 
 describe('extractOrderNumber', () => {
@@ -72,6 +73,59 @@ describe('detectIntent', () => {
 
   it('weights the subject line', () => {
     expect(detectIntent('Damaged on arrival', 'See attached.')).toBe('damage');
+  });
+
+  it('does not treat a declined outcome as the request', () => {
+    // Real wording from a WISMO ticket. Reading this as a refund gets the
+    // priority and the escalation route wrong, and answers a question the
+    // customer explicitly did not ask.
+    expect(
+      detectIntent(
+        'Order CD-118402 still says in transit after 9 days',
+        "Tracking hasn't moved since the 6th. Can you send a replacement? I don't want a refund, I just want the product.",
+      ),
+    ).toBe('wismo');
+  });
+
+  it('handles the curly apostrophe that HTML decoding produces', () => {
+    expect(
+      detectIntent('Where is my order', "It hasn't arrived. I don’t want a refund, just the item."),
+    ).toBe('wismo');
+  });
+
+  it('still detects a refund that is actually being asked for', () => {
+    expect(detectIntent('Refund please', 'I would like a refund for this order.')).toBe('refund');
+    expect(detectIntent('Double charged', 'I was charged twice, please refund one.')).toBe('refund');
+  });
+
+  it('classifies a dispenser failure as damage however it is worded', () => {
+    // The AF-T10 pump defect never says "defective" — it says this.
+    expect(detectIntent('Terminator 10 pump not dispensing', 'Pump clicks but nothing comes out.')).toBe(
+      'damage',
+    );
+  });
+
+  it('classifies a safety question about a named product', () => {
+    expect(
+      detectIntent('Is Clay Pomade safe for a shaved head?', 'Curious whether the clay will dry out my scalp.'),
+    ).toBe('product_q');
+  });
+
+  it('classifies usage and duration questions', () => {
+    expect(detectIntent('Quick one', 'How often should I apply this?')).toBe('product_q');
+    expect(detectIntent('Layering', 'Can I use this with retinol?')).toBe('product_q');
+  });
+});
+
+describe('stripNegatedOutcomes', () => {
+  it('removes the declined outcome and leaves the rest intact', () => {
+    const out = stripNegatedOutcomes("I don't want a refund, I just want the product.");
+    expect(out).not.toMatch(/refund/i);
+    expect(out).toMatch(/just want the product/);
+  });
+
+  it('leaves a genuine request untouched', () => {
+    expect(stripNegatedOutcomes('Please issue a refund.')).toMatch(/refund/i);
   });
 });
 
