@@ -143,6 +143,38 @@ export const csMessages = pgTable(
   },
   (t) => [
     uniqueIndex('cs_messages_graph_id_key').on(t.graphMessageId),
+    uniqueIndex('cs_messages_internet_id_key').on(t.ticketId, t.internetMessageId),
     index('cs_messages_ticket_idx').on(t.ticketId, t.sentAt),
+  ],
+);
+
+/**
+ * One row per composed reply, keyed by a client-supplied idempotency key.
+ * A duplicate reply to a customer is embarrassing; a duplicate refund is worse.
+ */
+export const csOutboundSends = pgTable(
+  'cs_outbound_sends',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => csTickets.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id'),
+    status: text('status').notNull().default('pending'),
+    inReplyToGraphId: text('in_reply_to_graph_id'),
+    draftGraphId: text('draft_graph_id'),
+    internetMessageId: text('internet_message_id'),
+    sentGraphId: text('sent_graph_id'),
+    bodyText: text('body_text').notNull(),
+    error: text('error'),
+    attempts: integer('attempts').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('cs_outbound_sends_key').on(t.idempotencyKey),
+    index('cs_outbound_sends_ticket_idx').on(t.ticketId, t.createdAt.desc()),
   ],
 );

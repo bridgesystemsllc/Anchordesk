@@ -40,6 +40,28 @@ export async function storeMessage(msg: NormalizedMessage): Promise<StoreOutcome
       return { status: 'duplicate', ticketId: existing[0]!.ticketId };
     }
 
+    // Second identity check, on the Internet Message-Id. A reply we sent is
+    // written immediately under its draft's Graph id, and Sent Items later
+    // reconciles the same mail under a different one. The Message-Id survives
+    // that transition, so without this the agent sees their own reply twice.
+    if (msg.internetMessageId) {
+      const sameMail = await tx
+        .select({ id: csMessages.id, ticketId: csMessages.ticketId })
+        .from(csMessages)
+        .where(eq(csMessages.internetMessageId, msg.internetMessageId))
+        .limit(1);
+
+      if (sameMail.length > 0) {
+        // Adopt the canonical Graph id so later delta passes short-circuit on
+        // the cheaper check above.
+        await tx
+          .update(csMessages)
+          .set({ graphMessageId: msg.graphMessageId })
+          .where(eq(csMessages.id, sameMail[0]!.id));
+        return { status: 'duplicate', ticketId: sameMail[0]!.ticketId };
+      }
+    }
+
     const customerId = await upsertCustomer(tx, msg);
 
     const [openTicket] = await tx

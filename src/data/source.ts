@@ -1,4 +1,4 @@
-import { apiGet, isLive } from '@/lib/api';
+import { apiGet, apiPost, isLive } from '@/lib/api';
 import { TICKETS, ticketById } from './mock';
 import { mockToQueueItem, mockToTicketDetail } from './fromMock';
 import {
@@ -68,6 +68,31 @@ export async function getTicket(id: string, signal?: AbortSignal): Promise<Ticke
   }>(`/api/tickets/${encodeURIComponent(id)}`, signal);
 
   return toTicketDetail(payload);
+}
+
+export interface SendReplyResult {
+  status: 'sent' | 'already_sent';
+  ticketId: string;
+  messageId: string | null;
+}
+
+/**
+ * Sends a reply. `idempotencyKey` must stay stable across retries of the same
+ * composed message — that is what makes a double-click, a lost response, or a
+ * timeout resolve to one email rather than two.
+ */
+export async function sendReply(
+  ticketId: string,
+  body: string,
+  idempotencyKey: string,
+): Promise<SendReplyResult> {
+  if (!isLive) {
+    return { status: 'sent', ticketId, messageId: null };
+  }
+  return apiPost<SendReplyResult>(`/api/tickets/${encodeURIComponent(ticketId)}/reply`, {
+    body,
+    idempotencyKey,
+  });
 }
 
 export interface MailboxHealth {

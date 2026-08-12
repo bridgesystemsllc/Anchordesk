@@ -33,6 +33,11 @@ export class ApiError extends Error {
   get isNotFound(): boolean {
     return this.status === 404;
   }
+
+  /** A send is already running under this idempotency key. Wait, don't resend. */
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
 }
 
 /**
@@ -82,6 +87,50 @@ export async function apiGet<T>(
   }
 
   return (await res.json()) as T;
+}
+
+export async function apiPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  if (!BASE_URL) throw new ApiError('VITE_API_URL is not configured', 0);
+
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      signal: composed,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    if (e instanceof DOMException && e.name === 'TimeoutError') {
+      // The request may still be in flight on the server, so the caller must
+      // retry with the SAME idempotency key rather than composing a new send.
+      throw new ApiError('The server took too long to respond', 0);
+    }
+    throw new ApiError('Could not reach the Anchor Desk server', 0);
+  }
+
+  const text = await res.text();
+  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+  if (!res.ok) {
+    const message =
+      typeof payload.message === 'string'
+        ? payload.message
+        : typeof payload.error === 'string'
+          ? payload.error
+          : `${res.status} ${res.statusText}`;
+    throw new ApiError(message, res.status);
+  }
+
+  return payload as T;
 }
 
 export function apiErrorMessage(e: unknown): string {

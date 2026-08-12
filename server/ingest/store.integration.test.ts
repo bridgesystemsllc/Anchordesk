@@ -40,7 +40,18 @@ const BASE: NormalizedMessage = {
   slaDueAt: new Date('2026-08-11T15:39:00Z'),
 };
 
-const msg = (o: Partial<NormalizedMessage> = {}): NormalizedMessage => ({ ...BASE, ...o });
+/**
+ * Distinct mail gets a distinct Internet Message-Id, matching reality — two
+ * messages sharing one Message-Id are the same mail, and storeMessage is right
+ * to collapse them. Tests that care about that pass an explicit value.
+ */
+const msg = (o: Partial<NormalizedMessage> = {}): NormalizedMessage => {
+  const merged = { ...BASE, ...o };
+  if (!('internetMessageId' in o)) {
+    merged.internetMessageId = `<${merged.graphMessageId}@example.com>`;
+  }
+  return merged;
+};
 
 suite('storeMessage', () => {
   beforeAll(async () => {
@@ -89,6 +100,22 @@ suite('storeMessage', () => {
     await storeMessage(msg());
     await storeMessage(msg({ graphMessageId: 'msg-2', conversationId: 'CONV-2' }));
     expect(await count(csTickets)).toBe(2);
+  });
+
+  it('collapses two Graph ids carrying the same Internet Message-Id', async () => {
+    // This is how our own sent reply comes back from Sent Items: same mail,
+    // new Graph id. Without this the agent sees their reply twice.
+    await storeMessage(msg({ graphMessageId: 'draft-id', internetMessageId: '<same@mail>' }));
+    const echoed = await storeMessage(
+      msg({ graphMessageId: 'sent-items-id', internetMessageId: '<same@mail>' }),
+    );
+
+    expect(echoed.status).toBe('duplicate');
+    expect(await count(csMessages)).toBe(1);
+
+    const [stored] = await db.select().from(csMessages);
+    // The row adopts the canonical id so later passes stop at the cheap check.
+    expect(stored!.graphMessageId).toBe('sent-items-id');
   });
 
   it('ignores a redelivered message rather than writing it twice', async () => {
