@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -26,7 +26,7 @@ import { EscalateModal } from '@/components/EscalateModal';
 import { LogCallModal } from '@/components/LogCallModal';
 import { Avatar, BrandChip, EmptyState, KeyVal, SlaRing, StatusBadge } from '@/components/ui';
 import { BRANDS, INTENT_LABEL } from '@/data/brands';
-import { getTicket, isLive } from '@/data/source';
+import { getTicket, isLive, sendReply } from '@/data/source';
 import type { Citation, Message } from '@/data/types';
 import type { TicketDetail } from '@/data/view';
 import { useResource } from '@/hooks/useResource';
@@ -35,6 +35,39 @@ import { clockTime, cx, fullStamp, shortAge, usd } from '@/lib/utils';
 
 const TRACK_ORDER = ['unfulfilled', 'in_transit', 'out_for_delivery', 'delivered'] as const;
 const TRACK_LABELS = ['Placed', 'In transit', 'Out for del.', 'Delivered'];
+
+function newKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `key-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function sendErrorHeadline(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.isConflict) return 'This reply is already being sent';
+    if (e.status === 0) return 'Could not confirm whether the reply was sent';
+    if (e.status === 502) return 'Outlook rejected the reply';
+    if (e.isUnauthorized) return 'Not authorized to send';
+  }
+  return 'The reply was not sent';
+}
+
+/**
+ * The uncertain case matters most. On a timeout the mail may already be gone,
+ * so the agent must be told to retry rather than rewrite — retrying reuses the
+ * idempotency key and cannot produce a second email.
+ */
+function sendErrorDetail(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.isConflict) {
+      return 'Another send is already in flight for this message. Give it a moment, then refresh — it will not send twice.';
+    }
+    if (e.status === 0) {
+      return 'It may or may not have gone out. Press Try again — this resumes the same send and cannot email the customer twice. Do not rewrite the reply.';
+    }
+    if (e.status === 502) return `${e.message}. Press Try again once the mailbox recovers.`;
+  }
+  return apiErrorMessage(e);
+}
 
 export function TicketView() {
   const { id = '' } = useParams();
@@ -53,6 +86,16 @@ export function TicketView() {
   const [logging, setLogging] = useState(false);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<unknown>(undefined);
+
+  /**
+   * One key per composed reply, minted lazily and reused across retries. This
+   * is the client half of the send-once guarantee: pressing send again after a
+   * timeout resumes the same send rather than starting a second one.
+   */
+  const idempotencyKey = useRef<string | null>(null);
+  if (idempotencyKey.current === null) idempotencyKey.current = newKey();
 
   if (loading) return <TicketSkeleton />;
 
@@ -111,6 +154,28 @@ export function TicketView() {
       setDraft(ticket.aiDraft ?? '');
       setGenerating(false);
     }, 1100);
+  };
+
+  const send = async () => {
+    if (!body.trim() || sending) return;
+    setSending(true);
+    setSendError(undefined);
+
+    try {
+      await sendReply(ticket.id, body, idempotencyKey.current!);
+      setSent(true);
+      // A fresh key: the next reply is a new message, not a retry of this one.
+      idempotencyKey.current = newKey();
+      setDraft('');
+      refetch();
+    } catch (e) {
+      // The key is deliberately NOT rotated here. Whatever went wrong, the
+      // message may already have gone out, and retrying under the same key is
+      // what stops the customer receiving it twice.
+      setSendError(e);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -192,24 +257,13 @@ export function TicketView() {
             </div>
           )}
 
+          {/* No optimistic entry: the send writes the message before it
+              responds, so the refetch shows what actually happened rather than
+              what we hoped happened. */}
           <div className="timeline">
             {ticket.messages.map((m, i) => (
               <TimelineItem key={m.id} m={m} index={i} />
             ))}
-            {sent && (
-              <TimelineItem
-                index={ticket.messages.length}
-                m={{
-                  id: 'sent-now',
-                  kind: 'outbound',
-                  authorName: 'You',
-                  body,
-                  at: new Date().toISOString(),
-                  draftedByAi: Boolean(ticket.aiDraft),
-                  editedByHuman: true,
-                }}
-              />
-            )}
           </div>
         </div>
 
@@ -233,11 +287,31 @@ export function TicketView() {
             </div>
           </div>
 
+          {sendError !== undefined && (
+            <div className="callout callout-warn" style={{ marginBottom: 9 }}>
+              <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+              <span className="grow">
+                <strong>{sendErrorHeadline(sendError)}</strong>
+                <br />
+                {sendErrorDetail(sendError)}
+              </span>
+              <button className="btn btn-sm btn-secondary" onClick={() => void send()} disabled={sending}>
+                Try again
+              </button>
+            </div>
+          )}
+
           <div className={cx('composer-box', generating && 'generating')}>
             <textarea
               className="composer-textarea"
               value={body}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                // Typing after a send means a new reply is being written; the
+                // button must stop reading "Sent" and offer to send again.
+                if (sent) setSent(false);
+                if (sendError !== undefined) setSendError(undefined);
+              }}
               placeholder={
                 ticket.aiDraft
                   ? 'AI draft loading…'
@@ -267,18 +341,21 @@ export function TicketView() {
                 <StickyNote size={14} />
               </button>
               <span className="t-xs t-ter ml-a">
-                {isLive
-                  ? 'Sending lands on Day 5 — this composer does not send yet'
-                  : `Threads into the existing conversation · lands in ${brand.mailbox} Sent`}
+                Threads into the existing conversation · lands in {brand.mailbox} Sent
               </span>
               <button
                 className="btn btn-sm btn-primary"
-                disabled={!body.trim() || sent || isLive}
-                title={isLive ? 'Outbound send is not wired yet (Day 5)' : undefined}
-                onClick={() => setSent(true)}
+                disabled={!body.trim() || sending}
+                onClick={() => void send()}
               >
-                {sent ? <Check size={13} /> : <Send size={13} />}
-                {sent ? 'Sent' : 'Send reply'}
+                {sending ? (
+                  <RefreshCw size={13} className="spin" />
+                ) : sent ? (
+                  <Check size={13} />
+                ) : (
+                  <Send size={13} />
+                )}
+                {sending ? 'Sending…' : sent ? 'Sent' : 'Send reply'}
               </button>
             </div>
           </div>

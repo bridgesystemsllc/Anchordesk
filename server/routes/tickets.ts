@@ -3,6 +3,8 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-
 import { z } from 'zod';
 import { db } from '../db/client';
 import { csCustomers, csMessages, csTickets } from '../db/schema';
+import { SendError, sendReply } from '../ingest/outbound';
+import { errFields, log } from '../log';
 
 export const ticketsRouter = Router();
 
@@ -84,6 +86,61 @@ ticketsRouter.get('/tickets', async (req, res) => {
     tickets: rows,
     nextBefore: rows.length === q.limit ? rows[rows.length - 1]?.updatedAt : null,
   });
+});
+
+const replyBody = z.object({
+  body: z.string().trim().min(1, 'A reply cannot be empty').max(50_000),
+  /**
+   * Stable for one composed reply. The client generates it when the agent
+   * starts typing, so a double-click or a retried request resolves to one send.
+   */
+  idempotencyKey: z.string().min(8).max(128),
+  agentId: z.string().max(128).optional(),
+});
+
+ticketsRouter.post('/tickets/:id/reply', async (req, res) => {
+  const id = z.string().uuid().safeParse(req.params.id);
+  if (!id.success) {
+    res.status(400).json({ error: 'invalid_id' });
+    return;
+  }
+
+  const parsed = replyBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+    return;
+  }
+
+  try {
+    const outcome = await sendReply({
+      ticketId: id.data,
+      bodyText: parsed.data.body,
+      idempotencyKey: parsed.data.idempotencyKey,
+      agentId: parsed.data.agentId ?? null,
+    });
+
+    // 409 tells the client a send is already running under this key, so the
+    // correct response is to wait rather than to try again with a new one.
+    if (outcome.status === 'in_flight') {
+      res.status(409).json({ error: 'send_in_flight', ...outcome });
+      return;
+    }
+
+    res.json(outcome);
+  } catch (e) {
+    if (e instanceof SendError) {
+      const status =
+        e.code === 'ticket_not_found'
+          ? 404
+          : e.code === 'graph_failed'
+            ? 502
+            : 409;
+      res.status(status).json({ error: e.code, message: e.message });
+      return;
+    }
+    log.error('reply route failed', errFields(e));
+    res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 ticketsRouter.get('/tickets/:id', async (req, res) => {
