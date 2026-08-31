@@ -1,0 +1,34 @@
+---
+description: Bridge coding standards for Anchor Desk
+alwaysApply: true
+---
+
+# Bridge Rules
+
+**Anchor Desk** — React/TS customer service dashboard. Bridge Systems product.
+
+## Workflow
+PREP → BUILD → VERIFY. Plan before code. Typecheck and test after.
+
+## Code
+- Root-cause fixes only. No symptom patches.
+- No silent catches. Log, rethrow, or handle.
+- Match existing patterns.
+
+## UI
+LIGHT-FIRST. Apple + SpaceX.
+
+| Token       | Value     |
+|-------------|-----------|
+| canvas      | #F5F5F7   |
+| text        | #1D1D1F   |
+| primary     | #0071E3   |
+| chrome      | #111111   |
+| destructive | #E82127   |
+
+Fonts: SF Pro / -apple-system, Space Grotesk headlines, JetBrains Mono data.
+
+Retired: dark-first, #7C3AED — unless spec names them.
+
+## Boundaries
+No merge. No deploy. No secrets. No real customer data.
