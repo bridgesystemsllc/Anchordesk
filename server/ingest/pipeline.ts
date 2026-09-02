@@ -3,6 +3,7 @@ import { type StoreOutcome, logOutcome, storeMessage } from './store';
 import type { MailboxRow } from './mailboxes';
 import { GraphError, graphRequest } from '../graph/client';
 import { MESSAGE_SELECT, type GraphMessage } from '../graph/types';
+import { applyAiTriage } from '../ai/triage';
 import { errFields, log } from '../log';
 
 export interface IngestStats {
@@ -54,6 +55,31 @@ export async function ingestMessage(
   if (outcome.status === 'created') stats.created++;
   else if (outcome.status === 'appended') stats.appended++;
   else stats.duplicate++;
+
+  // Apply AI triage for inbound messages that created or appended to a ticket.
+  // Outbound messages and duplicates skip the model. On timeout/error, rule-based values are kept.
+  if (
+    result.message.direction === 'inbound' &&
+    (outcome.status === 'created' || outcome.status === 'appended')
+  ) {
+    try {
+      await applyAiTriage({
+        ticketId: outcome.ticketId,
+        subject: result.message.subject,
+        bodyText: result.message.bodyText,
+        brandCode: result.message.brandCode,
+        vip: false, // VIP status comes from customer lookup, not available in pipeline
+        orderNumberHint: result.message.orderNumber,
+        ticketCreatedAt: result.message.sentAt,
+      });
+    } catch (e) {
+      // On timeout/error, rule-based values remain. Log but don't fail ingest.
+      log.warn('ai triage failed, keeping rule-based values', {
+        ticketId: outcome.ticketId,
+        ...errFields(e),
+      });
+    }
+  }
 
   return outcome;
 }

@@ -486,5 +486,73 @@
     "expected": {
       "intent": "other"
     }
+  },
+  {
+    "id": "59",
+    "subject": "Don't want a refund, just my product",
+    "body": "I don't want a refund. I just want the product I ordered. Please reship order CD-445566. I've been waiting for weeks.",
+    "negated": true,
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "CD-445566"
+    }
+  },
+  {
+    "id": "60",
+    "subject": "Not asking for a return",
+    "body": "I'm not looking to return anything. The product is fine, I just have a question about how to apply the foundation correctly.",
+    "negated": true,
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "61",
+    "subject": "No refund needed - product question",
+    "body": "I don't need a refund or return. I just want to know if this serum is safe to use with retinol. I already love the product.",
+    "negated": true,
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "62",
+    "subject": "Not damaged, just wrong shade",
+    "body": "The product isn't damaged at all, it's in perfect condition. I just ordered the wrong shade and would like to exchange it. Order DB-112233.",
+    "negated": true,
+    "expected": {
+      "intent": "return",
+      "orderNumber": "DB-112233"
+    }
+  },
+  {
+    "id": "63",
+    "subject": "Don't need to escalate, just a question",
+    "body": "I'm not asking for a supervisor or anything like that. I just have a simple question about my order status. Order BOC-998877.",
+    "negated": true,
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "BOC-998877"
+    }
+  },
+  {
+    "id": "64",
+    "subject": "Not complaining, just checking",
+    "body": "I'm not complaining about damage or anything. The package looks fine. I just want to confirm my order AF-123456 shipped.",
+    "negated": true,
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "AF-123456"
+    }
+  },
+  {
+    "id": "65",
+    "subject": "No legal action intended",
+    "body": "I'm not threatening legal action or asking for a manager. I just want to understand why my refund is taking so long. Order AMBI-556677.",
+    "negated": true,
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AMBI-556677"
+    }
   }
 ]
