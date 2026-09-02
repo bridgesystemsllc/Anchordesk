@@ -317,9 +317,44 @@ export const csOpsDrills = pgTable(
 );
 
 /**
- * Excel bindings for runtime workbook integration. Each binding defines a
- * target workbook/worksheet and optional auto-append intent trigger.
- * Field map lives in payload.map.
+ * Brand settings — display names, signatures, and brand voice for AI drafting.
+ * Five brands: CD, DB, BOC, AMBI, AF.
+ */
+export const csBrandSettings = pgTable('cs_brand_settings', {
+  brandCode: text('brand_code').primaryKey(),
+  displayName: text('display_name').notNull(),
+  shortName: text('short_name').notNull(),
+  signature: text('signature').notNull(),
+  voice: text('voice').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Routing rules for escalation. Each rule maps an intent (optionally per brand)
+ * to a Teams channel or user destination.
+ */
+export const csRoutingRules = pgTable(
+  'cs_routing_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    intent: text('intent').notNull(),
+    brandCode: text('brand_code'),
+    destinationType: text('destination_type').notNull(),
+    destination: text('destination').notNull(),
+    label: text('label').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('cs_routing_rules_intent_idx').on(t.intent),
+    index('cs_routing_rules_brand_idx').on(t.brandCode),
+  ],
+);
+
+/**
+ * Excel workbook bindings for data export. Each binding maps to a worksheet
+ * in a Graph workbook. Live sessions are AD-107. Field map lives in payload.map.
  */
 export const csExcelBindings = pgTable(
   'cs_excel_bindings',
@@ -329,9 +364,11 @@ export const csExcelBindings = pgTable(
     workbookId: text('workbook_id'),
     worksheet: text('worksheet').notNull(),
     owner: text('owner'),
+    columns: text('columns').array().notNull().default(sql`'{}'::text[]`),
     autoAppendOn: text('auto_append_on'),
     payload: jsonb('payload').notNull().default({}),
     enabled: boolean('enabled').notNull().default(true),
+    lastWriteAt: timestamp('last_write_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -364,4 +401,68 @@ export const csExcelAppends = pgTable(
     uniqueIndex('cs_excel_appends_ticket_binding_key').on(t.ticketId, t.bindingId),
     index('cs_excel_appends_binding_idx').on(t.bindingId, t.createdAt.desc()),
   ],
+);
+
+/**
+ * Knowledge source configurations (not the per-file cs_kb_sources).
+ * Defines where to pull KB content from: SharePoint sites/drives or fixtures.
+ */
+export const csKbSourceConfigs = pgTable(
+  'cs_kb_source_configs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    kind: text('kind').notNull(),
+    brandCode: text('brand_code'),
+    siteId: text('site_id'),
+    driveId: text('drive_id'),
+    itemPath: text('item_path'),
+    enabled: boolean('enabled').notNull().default(true),
+    lastIndexedAt: timestamp('last_indexed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('cs_kb_source_configs_brand_idx').on(t.brandCode)],
+);
+
+/**
+ * SLA targets by priority (1-4). first_response_minutes is 1-10080.
+ */
+export const csSlaTargets = pgTable('cs_sla_targets', {
+  priority: smallint('priority').primaryKey(),
+  firstResponseMinutes: integer('first_response_minutes').notNull(),
+  appliesTo: text('applies_to').notNull().default(''),
+});
+
+/**
+ * AI settings (singleton row). Model, tone, cost ceiling, auto-draft toggle.
+ */
+export const csAiSettings = pgTable('cs_ai_settings', {
+  id: text('id').primaryKey().default('default'),
+  model: text('model').notNull().default('claude-sonnet-4-5'),
+  tone: text('tone').notNull().default('warm'),
+  costCeilingUsd: numeric('cost_ceiling_usd', { precision: 12, scale: 2 }).notNull().default('50'),
+  autoDraft: boolean('auto_draft').notNull().default(true),
+  requireCitations: boolean('require_citations').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Users and roles. Seeded from AGENTS; live Entra import is not wired on AD-106.
+ */
+export const csUsers = pgTable(
+  'cs_users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    email: text('email').notNull(),
+    role: text('role').notNull(),
+    title: text('title').notNull().default(''),
+    entraGroup: text('entra_group'),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('cs_users_email_key').on(sql`lower(${t.email})`)],
 );
