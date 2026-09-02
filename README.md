@@ -25,7 +25,7 @@ For operational procedures, health monitoring, and troubleshooting, see [`docs/r
 | Calls | `/calls` | Built · Path A manual logging |
 | Sheets | `/sheets` | Built · native grid stand-in for the SharePoint embed |
 | Insights | `/insights` | Built · mock aggregates |
-| Settings & Admin | `/settings` | Built · all nine sections |
+| Settings & Admin | `/settings` | **Live** · AD-106 wired to backend |
 
 **Backend** — Graph email ingest is live (Day 2–3). Webhook + delta reconciliation, threading,
 idempotency, subscription auto-renewal.

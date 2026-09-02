@@ -101,10 +101,12 @@ export async function assembleDraftContext(ticketId: string): Promise<DraftConte
     order = { number: ticket.orderNumber };
   }
 
+  const voice = await getBrandVoice(ticket.brandId);
+
   return {
     ticketId,
     brandCode: ticket.brandId,
-    voice: getBrandVoice(ticket.brandId),
+    voice,
     subject: ticket.subject ?? '(no subject)',
     intent: ticket.intent,
     thread,
