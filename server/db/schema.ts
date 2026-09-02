@@ -299,3 +299,19 @@ export const csKbChunks = pgTable(
     index('cs_kb_chunks_brand_idx').on(t.brandCode),
   ],
 );
+
+/**
+ * Ops drill runs. Each POST to /api/health/renewal-drill inserts one row,
+ * storing the JSON response payload for audit and debugging.
+ */
+export const csOpsDrills = pgTable(
+  'cs_ops_drills',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    ok: boolean('ok').notNull(),
+    payload: jsonb('payload').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('cs_ops_drills_created_idx').on(t.createdAt.desc())],
+);

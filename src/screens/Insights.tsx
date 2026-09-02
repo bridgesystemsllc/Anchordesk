@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, Send, Sparkles, TrendingUp } from 'lucide-react';
-import { Sparkline } from '@/components/ui';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart2, RefreshCw, Send, Sparkles, TrendingUp } from 'lucide-react';
+import { EmptyState, Sparkline } from '@/components/ui';
 import {
   AGENT_THROUGHPUT,
   CLUSTERS,
@@ -10,6 +10,13 @@ import {
   agentById,
 } from '@/data/mock';
 import { cx } from '@/lib/utils';
+
+export type InsightsStatus = 'ready' | 'loading' | 'empty' | 'error';
+
+export interface InsightsViewProps {
+  status?: InsightsStatus;
+  onRetry?: () => void;
+}
 
 /** Counts a KPI up from zero on mount — the number arriving feels like data landing. */
 function useCountUp(target: number, ms = 900) {
@@ -68,8 +75,69 @@ function Kpi({
   );
 }
 
-export function Insights() {
+export function InsightsView({ status = 'ready', onRetry }: InsightsViewProps) {
   const maxDay = Math.max(...VOLUME_BY_DAY.map((d) => d.count));
+
+  if (status === 'loading') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Insights</h1>
+            <p className="page-sub">Loading insights...</p>
+          </div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+          <RefreshCw size={24} className="spin" style={{ color: 'var(--text-tertiary)' }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'empty') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Insights</h1>
+            <p className="page-sub">No data available</p>
+          </div>
+        </div>
+        <EmptyState
+          glyph={<BarChart2 size={26} />}
+          title="No insights yet"
+          body="Insights will appear once tickets start flowing through the system."
+        />
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Insights</h1>
+            <p className="page-sub">Error loading insights</p>
+          </div>
+        </div>
+        <div className="callout callout-warn" style={{ margin: '24px 0' }}>
+          <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+          <div>
+            <strong>Insights could not be loaded</strong>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+              Aggregates are unavailable. Live Insights is not this ticket. Retry keeps you on this page.
+            </p>
+          </div>
+        </div>
+        {onRetry && (
+          <button className="btn btn-primary" onClick={onRetry} style={{ alignSelf: 'flex-start' }}>
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -246,4 +314,8 @@ export function Insights() {
       </div>
     </div>
   );
+}
+
+export function Insights() {
+  return <InsightsView status="ready" />;
 }

@@ -1,10 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PhoneIncoming, PhoneOutgoing, Plus, Search, Sparkles } from 'lucide-react';
+import { AlertTriangle, PhoneIncoming, PhoneOutgoing, Plus, RefreshCw, Search, Sparkles } from 'lucide-react';
 import { LogCallModal } from '@/components/LogCallModal';
 import { Avatar, Badge, EmptyState } from '@/components/ui';
 import { CALLS, agentById, customerById } from '@/data/mock';
 import { cx, duration, fullStamp } from '@/lib/utils';
+
+export type CallsStatus = 'ready' | 'loading' | 'empty' | 'error';
+
+export interface CallsViewProps {
+  status?: CallsStatus;
+  onRetry?: () => void;
+}
 
 const OUTCOME_TONE = {
   resolved: 'success',
@@ -20,7 +27,7 @@ const OUTCOME_LABEL = {
   no_answer: 'No answer',
 } as const;
 
-export function Calls() {
+export function CallsView({ status = 'ready', onRetry }: CallsViewProps) {
   const [q, setQ] = useState('');
   const [logging, setLogging] = useState(false);
 
@@ -40,6 +47,73 @@ export function Calls() {
   }, [q]);
 
   const totalMin = Math.round(CALLS.reduce((s, c) => s + c.durationSec, 0) / 60);
+
+  if (status === 'loading') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Calls</h1>
+            <p className="page-sub">Loading calls...</p>
+          </div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+          <RefreshCw size={24} className="spin" style={{ color: 'var(--text-tertiary)' }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'empty') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Calls</h1>
+            <p className="page-sub">No calls logged</p>
+          </div>
+        </div>
+        <EmptyState
+          glyph={<PhoneIncoming size={26} />}
+          title="No calls yet"
+          body="Calls will appear here once agents start logging them."
+          action={
+            <button className="btn btn-primary" onClick={() => setLogging(true)}>
+              <Plus size={14} /> Log call
+            </button>
+          }
+        />
+        {logging && <LogCallModal onClose={() => setLogging(false)} />}
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Calls</h1>
+            <p className="page-sub">Error loading calls</p>
+          </div>
+        </div>
+        <div className="callout callout-warn" style={{ margin: '24px 0' }}>
+          <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+          <div>
+            <strong>Calls could not be loaded</strong>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+              The call log could not be loaded. Live call ingest is not this ticket.
+            </p>
+          </div>
+        </div>
+        {onRetry && (
+          <button className="btn btn-primary" onClick={onRetry} style={{ alignSelf: 'flex-start' }}>
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -135,4 +209,8 @@ export function Calls() {
       {logging && <LogCallModal onClose={() => setLogging(false)} />}
     </div>
   );
+}
+
+export function Calls() {
+  return <CallsView status="ready" />;
 }
