@@ -1,14 +1,17 @@
 /**
  * Brand voice strings for AI draft generation.
- * Copied from src/data/brands.ts (do not import from src/).
+ * AD-106: Reads from cs_brand_settings with fallback to constants.
  */
+import { eq } from 'drizzle-orm';
+import { db } from '../db/client';
+import { csBrandSettings } from '../db/schema';
 
 export interface BrandVoice {
   voice: string;
   signature: string;
 }
 
-export const BRAND_VOICES: Record<string, BrandVoice> = {
+const FALLBACK_VOICES: Record<string, BrandVoice> = {
   CD: {
     voice: 'Warm, personal, community-minded. Speaks to hair journeys, never clinical.',
     signature: "The Carol's Daughter Care Team",
@@ -31,11 +34,29 @@ export const BRAND_VOICES: Record<string, BrandVoice> = {
   },
 };
 
-export function getBrandVoice(brandCode: string): BrandVoice {
-  return (
-    BRAND_VOICES[brandCode] ?? {
-      voice: 'Professional, helpful, and empathetic.',
-      signature: 'Customer Care Team',
+const DEFAULT_VOICE: BrandVoice = {
+  voice: 'Professional, helpful, and empathetic.',
+  signature: 'Customer Care Team',
+};
+
+export async function getBrandVoice(brandCode: string): Promise<BrandVoice> {
+  try {
+    const [row] = await db
+      .select({ voice: csBrandSettings.voice, signature: csBrandSettings.signature })
+      .from(csBrandSettings)
+      .where(eq(csBrandSettings.brandCode, brandCode))
+      .limit(1);
+
+    if (row) {
+      return { voice: row.voice, signature: row.signature };
     }
-  );
+  } catch {
+    // DB not ready or table missing — fall back to constants
+  }
+
+  return FALLBACK_VOICES[brandCode] ?? DEFAULT_VOICE;
+}
+
+export function getBrandVoiceSync(brandCode: string): BrandVoice {
+  return FALLBACK_VOICES[brandCode] ?? DEFAULT_VOICE;
 }
