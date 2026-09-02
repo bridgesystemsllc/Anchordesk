@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toMessage, toQueueItem, toTicketDetail, type ApiQueueRow } from './fromApi';
+import { toMessage, toQueueItem, toTicketDetail, type ApiQueueRow, type ApiTicketRow } from './fromApi';
 
 function row(overrides: Partial<ApiQueueRow> = {}): ApiQueueRow {
   return {
@@ -23,6 +23,7 @@ function row(overrides: Partial<ApiQueueRow> = {}): ApiQueueRow {
     tags: [],
     preview: "Tracking hasn't   moved since\nthe 6th.",
     messageCount: 2,
+    aiDraftReady: false,
     customerId: 'c-1',
     customerName: 'Tanya Whitfield',
     customerEmail: 'tanya.whitfield@gmail.com',
@@ -138,9 +139,22 @@ describe('toMessage', () => {
 describe('toTicketDetail', () => {
   const base = row();
 
+  function ticketRow(overrides: Partial<ApiTicketRow> = {}): ApiTicketRow {
+    return {
+      ...base,
+      brandId: 'CD',
+      orderSnapshot: null,
+      conversationId: 'c',
+      resolvedAt: null,
+      aiSummary: null,
+      policyHits: null,
+      ...overrides,
+    };
+  }
+
   it('parses a Postgres numeric delivered as a string', () => {
     const detail = toTicketDetail({
-      ticket: { ...base, brandId: 'DB', orderSnapshot: null, conversationId: 'c', resolvedAt: null },
+      ticket: ticketRow({ brandId: 'DB' } as Partial<ApiTicketRow>),
       customer: {
         id: 'c-1',
         email: 'tanya.whitfield@gmail.com',
@@ -160,7 +174,7 @@ describe('toTicketDetail', () => {
 
   it('stays renderable when the ticket has no customer row yet', () => {
     const detail = toTicketDetail({
-      ticket: { ...base, brandId: 'CD', orderSnapshot: null, conversationId: 'c', resolvedAt: null },
+      ticket: ticketRow(),
       customer: null,
       messages: [],
     });
@@ -171,7 +185,7 @@ describe('toTicketDetail', () => {
 
   it('returns empty AI sections so the UI hides them rather than showing blanks', () => {
     const detail = toTicketDetail({
-      ticket: { ...base, brandId: 'CD', orderSnapshot: null, conversationId: 'c', resolvedAt: null },
+      ticket: ticketRow(),
       customer: null,
       messages: [],
     });

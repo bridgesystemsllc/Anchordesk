@@ -108,6 +108,10 @@ export const csTickets = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    /** AI-generated summary bullets */
+    aiSummary: jsonb('ai_summary'),
+    /** Policy check hits from the last policy-check call */
+    policyHits: jsonb('policy_hits'),
   },
   (t) => [
     uniqueIndex('cs_tickets_number_key').on(t.number),
@@ -138,6 +142,8 @@ export const csMessages = pgTable(
     draftedByAi: boolean('drafted_by_ai').notNull().default(false),
     editedByHuman: boolean('edited_by_human').notNull().default(false),
     citations: jsonb('citations'),
+    /** Stores {original, sent} when an AI draft is edited before sending */
+    editDiff: jsonb('edit_diff'),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -145,6 +151,33 @@ export const csMessages = pgTable(
     uniqueIndex('cs_messages_graph_id_key').on(t.graphMessageId),
     uniqueIndex('cs_messages_internet_id_key').on(t.ticketId, t.internetMessageId),
     index('cs_messages_ticket_idx').on(t.ticketId, t.sentAt),
+  ],
+);
+
+/**
+ * One row per model call. Tracks triage, draft, summarize, policy_check, similar.
+ * Never stores email bodies, prompts, completions, or API keys.
+ */
+export const csAiRuns = pgTable(
+  'cs_ai_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => csTickets.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    model: text('model').notNull(),
+    promptTokens: integer('prompt_tokens').notNull().default(0),
+    completionTokens: integer('completion_tokens').notNull().default(0),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).notNull().default('0'),
+    latencyMs: integer('latency_ms').notNull(),
+    ok: boolean('ok').notNull(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('cs_ai_runs_ticket_idx').on(t.ticketId, t.createdAt.desc()),
+    index('cs_ai_runs_kind_idx').on(t.kind, t.createdAt.desc()),
   ],
 );
 

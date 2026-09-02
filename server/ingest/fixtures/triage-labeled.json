@@ -1,0 +1,490 @@
+[
+  {
+    "id": "1",
+    "subject": "Where is my order CD-118402?",
+    "body": "Hi, I placed an order last week and it still hasn't arrived. My tracking number shows it's stuck in transit. Order number CD-118402. When will I receive it?",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "CD-118402"
+    }
+  },
+  {
+    "id": "2",
+    "subject": "Order DB-77219 never delivered",
+    "body": "My package was supposed to arrive on Friday but nothing came. The tracking says delivered but I never got it. Order DB-77219.",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "DB-77219"
+    }
+  },
+  {
+    "id": "3",
+    "subject": "I want to return these products",
+    "body": "The lipstick shade doesn't match what I saw online. I'd like to return the entire order for store credit.",
+    "expected": {
+      "intent": "return"
+    }
+  },
+  {
+    "id": "4",
+    "subject": "Wrong item received - exchange needed",
+    "body": "I ordered the Velvet Matte in Burgundy but received Coral instead. Can I exchange this? Order BOC-33218.",
+    "expected": {
+      "intent": "return",
+      "orderNumber": "BOC-33218"
+    }
+  },
+  {
+    "id": "5",
+    "subject": "Requesting full refund",
+    "body": "I never received my package and I want my money back immediately. This is the second time this has happened. Order AF-99812.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AF-99812"
+    }
+  },
+  {
+    "id": "6",
+    "subject": "Double charged for order",
+    "body": "I see two charges on my credit card for the same order AMBI-44509. Please refund the duplicate charge.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AMBI-44509"
+    }
+  },
+  {
+    "id": "7",
+    "subject": "Product arrived damaged",
+    "body": "The foundation bottle was cracked and product leaked all over the box. Everything is ruined.",
+    "expected": {
+      "intent": "damage"
+    }
+  },
+  {
+    "id": "8",
+    "subject": "Broken pump on skincare product",
+    "body": "The pump on my serum doesn't work at all. I can't get any product out no matter how hard I press. Order CD-55123.",
+    "expected": {
+      "intent": "damage",
+      "orderNumber": "CD-55123"
+    }
+  },
+  {
+    "id": "9",
+    "subject": "Question about ingredients",
+    "body": "Does your Radiance Cream contain parabens or sulfates? I have sensitive skin and need to know before purchasing.",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "10",
+    "subject": "SPF in your foundation?",
+    "body": "What's the SPF level in the Luminous Foundation? Is it enough for daily sun protection?",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "11",
+    "subject": "I want to speak to a supervisor",
+    "body": "I've been dealing with your incompetent support team for weeks. I demand to speak with a supervisor immediately.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "12",
+    "subject": "Get me your manager NOW",
+    "body": "This is unacceptable. I want to escalate this to a manager. Your company has completely failed me.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "13",
+    "subject": "Legal action - attorney involved",
+    "body": "I am consulting with my attorney regarding the defective products you've sold me. Expect to hear from my lawyer.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "14",
+    "subject": "I will sue your company",
+    "body": "If I don't get resolution today, I will be filing a lawsuit. This is your final notice before legal action.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "15",
+    "subject": "General inquiry about my account",
+    "body": "Hi, I'm having trouble logging into my account. Can you help me reset my password?",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "16",
+    "subject": "Thank you!",
+    "body": "Just wanted to say thank you for the fast shipping. Love my new products!",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "17",
+    "subject": "Checking on my shipment",
+    "body": "Order CD-887766. Can you tell me when this will ship? I ordered 3 days ago.",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "CD-887766"
+    }
+  },
+  {
+    "id": "18",
+    "subject": "Tracking shows delivery exception",
+    "body": "My tracking for order DB-123456 shows a delivery exception. What does this mean and when will I get my package?",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "DB-123456"
+    }
+  },
+  {
+    "id": "19",
+    "subject": "Return window inquiry",
+    "body": "I purchased something 25 days ago. Am I still within the return window? I'd like to return my serum.",
+    "expected": {
+      "intent": "return"
+    }
+  },
+  {
+    "id": "20",
+    "subject": "Exchange for different color",
+    "body": "Hi, can I exchange my eyeshadow palette for a different shade? I still have the original packaging. Order BOC-11234.",
+    "expected": {
+      "intent": "return",
+      "orderNumber": "BOC-11234"
+    }
+  },
+  {
+    "id": "21",
+    "subject": "Cancel order and refund",
+    "body": "Please cancel order AF-90210 and issue a full refund. I no longer need these items.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AF-90210"
+    }
+  },
+  {
+    "id": "22",
+    "subject": "Partial refund request",
+    "body": "I received my order but one item was missing. I'd like a refund for the missing product from order AMBI-56789.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AMBI-56789"
+    }
+  },
+  {
+    "id": "23",
+    "subject": "Shattered compact arrived",
+    "body": "My powder compact arrived completely shattered. There's powder everywhere in the box. This is order CD-99223.",
+    "expected": {
+      "intent": "damage",
+      "orderNumber": "CD-99223"
+    }
+  },
+  {
+    "id": "24",
+    "subject": "Mascara dried out",
+    "body": "The mascara I received is completely dried out. It must have been sitting in your warehouse forever. Unusable!",
+    "expected": {
+      "intent": "damage"
+    }
+  },
+  {
+    "id": "25",
+    "subject": "What shades work for my skin tone?",
+    "body": "I have a warm undertone and medium complexion. Which foundation shade would you recommend for me?",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "26",
+    "subject": "Vegan products only",
+    "body": "Which of your products are certified vegan and cruelty-free? I only use ethical beauty products.",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "27",
+    "subject": "ESCALATE THIS IMMEDIATELY",
+    "body": "I've emailed 5 times with no response. I need to speak with whoever is in charge. Escalate this now!",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "28",
+    "subject": "Speaking with a real manager",
+    "body": "I'm tired of automated responses. Put me in touch with a real manager who can actually help.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "29",
+    "subject": "Store credit balance",
+    "body": "Can you check my store credit balance? I think I should have about $50 from a previous return.",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "30",
+    "subject": "Loyalty program question",
+    "body": "How many points do I need for a free product? And do points ever expire?",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "31",
+    "subject": "Order status CD-445566",
+    "body": "Hi, just checking on my order status. It's been 5 business days. Order CD-445566.",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "CD-445566"
+    }
+  },
+  {
+    "id": "32",
+    "subject": "International shipping delay",
+    "body": "My package has been stuck in customs for 2 weeks. Order DB-998877. Any way to expedite?",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "DB-998877"
+    }
+  },
+  {
+    "id": "33",
+    "subject": "Return label needed",
+    "body": "I need a return label to send back order BOC-778899. How do I get one?",
+    "expected": {
+      "intent": "return",
+      "orderNumber": "BOC-778899"
+    }
+  },
+  {
+    "id": "34",
+    "subject": "Unopened items return",
+    "body": "I bought several items but never opened them. Can I return them for a full refund?",
+    "expected": {
+      "intent": "return"
+    }
+  },
+  {
+    "id": "35",
+    "subject": "Charge dispute - never ordered",
+    "body": "There's a charge on my card from your company but I never placed an order. This might be fraud!",
+    "expected": {
+      "intent": "refund"
+    }
+  },
+  {
+    "id": "36",
+    "subject": "Refund not received",
+    "body": "I returned my order 3 weeks ago but still haven't received my refund. Order AF-556677.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AF-556677"
+    }
+  },
+  {
+    "id": "37",
+    "subject": "Defective product - leaking",
+    "body": "The serum bottle leaks from the cap every time I use it. It's making a mess. Order AMBI-112233.",
+    "expected": {
+      "intent": "damage",
+      "orderNumber": "AMBI-112233"
+    }
+  },
+  {
+    "id": "38",
+    "subject": "Wrong formula received",
+    "body": "I ordered the oily skin formula but received dry skin formula. The box was damaged too. Order CD-334455.",
+    "expected": {
+      "intent": "damage",
+      "orderNumber": "CD-334455"
+    }
+  },
+  {
+    "id": "39",
+    "subject": "Allergic reaction question",
+    "body": "Does your night cream contain any nut-derived ingredients? I have a severe nut allergy.",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "40",
+    "subject": "Shade matching help",
+    "body": "I'm between two shades online. Can you help me figure out which one would work better? NC25 or NC30?",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "41",
+    "subject": "This is going to my lawyer",
+    "body": "Your product caused a severe skin reaction. My lawyer will be contacting you about damages.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "42",
+    "subject": "Demand to speak with management",
+    "body": "I refuse to deal with customer service anymore. Connect me directly with management or corporate.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "43",
+    "subject": "Feedback on new collection",
+    "body": "Just wanted to share that I love the new spring collection! The colors are beautiful.",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "44",
+    "subject": "Gift card issue",
+    "body": "I received a gift card but the code doesn't work. Can you check if it's been activated?",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "45",
+    "subject": "Expedited shipping upgrade",
+    "body": "I just placed order CD-777888. Can I upgrade to overnight shipping? I need it for a special event.",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "CD-777888"
+    }
+  },
+  {
+    "id": "46",
+    "subject": "Package marked delivered but not here",
+    "body": "Tracking shows my order DB-234567 was delivered yesterday but nothing was at my door.",
+    "expected": {
+      "intent": "wismo",
+      "orderNumber": "DB-234567"
+    }
+  },
+  {
+    "id": "47",
+    "subject": "Want to exchange not refund",
+    "body": "I don't want a refund, I just want to exchange for a different product. Order BOC-345678.",
+    "expected": {
+      "intent": "return",
+      "orderNumber": "BOC-345678"
+    }
+  },
+  {
+    "id": "48",
+    "subject": "How do I initiate a return?",
+    "body": "What's the process to start a return? Do I need to contact you first or just ship it back?",
+    "expected": {
+      "intent": "return"
+    }
+  },
+  {
+    "id": "49",
+    "subject": "Need my money back ASAP",
+    "body": "I've been waiting too long for my refund. Please process it immediately. Order AF-678901.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AF-678901"
+    }
+  },
+  {
+    "id": "50",
+    "subject": "Promotional credit not applied",
+    "body": "The 20% discount code didn't apply to my order. I want a partial refund for the difference. Order AMBI-789012.",
+    "expected": {
+      "intent": "refund",
+      "orderNumber": "AMBI-789012"
+    }
+  },
+  {
+    "id": "51",
+    "subject": "Lipstick melted in shipping",
+    "body": "My lipstick arrived completely melted and unusable. The package must have been left in the heat.",
+    "expected": {
+      "intent": "damage"
+    }
+  },
+  {
+    "id": "52",
+    "subject": "Product separated",
+    "body": "The formula in my foundation has separated into two layers. Is it defective? Order CD-456789.",
+    "expected": {
+      "intent": "damage",
+      "orderNumber": "CD-456789"
+    }
+  },
+  {
+    "id": "53",
+    "subject": "Safe for sensitive eyes?",
+    "body": "I have very sensitive eyes. Is your mascara ophthalmologist tested and safe for contact lens wearers?",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "54",
+    "subject": "Fragrance free options",
+    "body": "Do you have any unscented moisturizers? Fragrances irritate my skin.",
+    "expected": {
+      "intent": "product_q"
+    }
+  },
+  {
+    "id": "55",
+    "subject": "I will never shop here again without resolution",
+    "body": "Unless a supervisor resolves this issue today, I'm done with your company and will warn others.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "56",
+    "subject": "Legal notice incoming",
+    "body": "Consider this formal notice that legal proceedings will begin if my complaint isn't addressed by a senior manager.",
+    "expected": {
+      "intent": "supervisor"
+    }
+  },
+  {
+    "id": "57",
+    "subject": "Newsletter unsubscribe",
+    "body": "Please remove me from your mailing list. I keep getting promotional emails.",
+    "expected": {
+      "intent": "other"
+    }
+  },
+  {
+    "id": "58",
+    "subject": "Wholesale inquiry",
+    "body": "I run a small beauty shop. Do you offer wholesale pricing for bulk orders?",
+    "expected": {
+      "intent": "other"
+    }
+  }
+]

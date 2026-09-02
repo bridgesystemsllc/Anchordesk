@@ -5,7 +5,7 @@
  * change of one call site, not a rewrite.
  */
 
-export type Intent = 'wismo' | 'return' | 'refund' | 'damage' | 'product_q' | 'other';
+export type Intent = 'wismo' | 'return' | 'refund' | 'damage' | 'product_q' | 'supervisor' | 'other';
 export type Priority = 1 | 2 | 3 | 4;
 
 /** Order-number prefixes per brand, plus the generic fallbacks. */
@@ -46,7 +46,7 @@ export function extractOrderNumber(text: string, brandCode?: string): string | n
   return null;
 }
 
-const INTENT_KEYWORDS: Record<Exclude<Intent, 'other'>, RegExp[]> = {
+const INTENT_KEYWORDS: Record<Exclude<Intent, 'other' | 'supervisor'>, RegExp[]> = {
   damage: [
     /\b(damaged?|broken|shattered|cracked|leaking|leaked|spilled|dented|melted)\b/i,
     /\b(arrived|came)\s+(in\s+pieces|broken|damaged)\b/i,
@@ -81,7 +81,7 @@ const INTENT_KEYWORDS: Record<Exclude<Intent, 'other'>, RegExp[]> = {
 };
 
 /** Order matters: damage and refund outrank the softer intents on a tie. */
-const INTENT_PRECEDENCE: Exclude<Intent, 'other'>[] = [
+const INTENT_PRECEDENCE: Exclude<Intent, 'other' | 'supervisor'>[] = [
   'refund',
   'damage',
   'return',
@@ -102,13 +102,29 @@ export function stripNegatedOutcomes(text: string): string {
   return text.replace(NEGATED_OUTCOME, ' ');
 }
 
+/**
+ * Phrases that indicate the customer wants to escalate to a supervisor or is
+ * threatening legal action. These trigger the 'supervisor' intent, which is
+ * never-deflect: no auto-resolve, no canned deflection, no auto-send.
+ */
+const SUPERVISOR_PHRASES: RegExp[] = [
+  /\b(supervisor|manager|escalate|speak to (a |your )?manager)\b/i,
+  /\b(lawyer|attorney|legal action|sue|lawsuit)\b/i,
+];
+
 export function detectIntent(subject: string, body: string): Intent {
   // Subject lines are short and deliberate — weight them above body prose.
   const haystack = stripNegatedOutcomes(`${subject}\n${subject}\n${body}`);
 
-  const scores = new Map<Exclude<Intent, 'other'>, number>();
+  // Check for supervisor/legal escalation before keyword scoring.
+  // These are never-deflect: customer wants human escalation, not a policy answer.
+  if (SUPERVISOR_PHRASES.some((p) => p.test(haystack))) {
+    return 'supervisor';
+  }
+
+  const scores = new Map<Exclude<Intent, 'other' | 'supervisor'>, number>();
   for (const [intent, patterns] of Object.entries(INTENT_KEYWORDS) as [
-    Exclude<Intent, 'other'>,
+    Exclude<Intent, 'other' | 'supervisor'>,
     RegExp[],
   ][]) {
     const score = patterns.reduce((sum, p) => sum + (p.test(haystack) ? 1 : 0), 0);
@@ -117,7 +133,7 @@ export function detectIntent(subject: string, body: string): Intent {
 
   if (scores.size === 0) return 'other';
 
-  let best: Exclude<Intent, 'other'> = INTENT_PRECEDENCE[0]!;
+  let best: Exclude<Intent, 'other' | 'supervisor'> = INTENT_PRECEDENCE[0]!;
   let bestScore = -1;
   for (const intent of INTENT_PRECEDENCE) {
     const score = scores.get(intent) ?? 0;
@@ -138,6 +154,7 @@ const ESCALATORS: RegExp[] = [
 ];
 
 const INTENT_BASE_PRIORITY: Record<Intent, Priority> = {
+  supervisor: 1,
   refund: 2,
   damage: 2,
   wismo: 3,

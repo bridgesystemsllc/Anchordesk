@@ -1064,6 +1064,16 @@ p {
   animation: glowPulse 2.8s var(--ease-smooth) infinite;
 }
 
+/* Supervisor escalation badge — red alert */
+.supervisor-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--danger-subtle, rgba(232, 33, 39, 0.1));
+  color: var(--danger);
+}
+
 /* Bulk action bar — rises from the bottom when rows are selected */
 .bulk-bar {
   position: absolute;
@@ -1401,6 +1411,21 @@ p {
   place-items: center;
   font-family: var(--font-mono);
   font-size: 9px;
+}
+
+/* Citation blocked warning */
+.citation-blocked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--danger-subtle, rgba(232, 33, 39, 0.08));
+  color: var(--danger);
+  font-size: 12px;
+  border-top: 1px solid var(--danger-line, rgba(232, 33, 39, 0.15));
+}
+.citation-blocked strong {
+  font-weight: 600;
 }
 
 /* Right context rail */
@@ -2081,6 +2106,11 @@ p {
 .callout-accent {
   background: var(--accent-subtle);
   border-color: var(--accent-line);
+  color: var(--text-primary);
+}
+.callout-danger {
+  background: var(--danger-subtle, rgba(232, 33, 39, 0.06));
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
   color: var(--text-primary);
 }
 

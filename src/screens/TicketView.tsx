@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Send,
   Settings2,
+  ShieldAlert,
   Sparkles,
   Star,
   StickyNote,
@@ -26,7 +27,14 @@ import { EscalateModal } from '@/components/EscalateModal';
 import { LogCallModal } from '@/components/LogCallModal';
 import { Avatar, BrandChip, EmptyState, KeyVal, SlaRing, StatusBadge } from '@/components/ui';
 import { BRANDS, INTENT_LABEL } from '@/data/brands';
-import { getTicket, isLive, sendReply } from '@/data/source';
+import {
+  checkPolicy,
+  generateDraft,
+  getTicket,
+  isLive,
+  sendReply,
+  summarizeThread,
+} from '@/data/source';
 import type { Citation, Message } from '@/data/types';
 import type { TicketDetail } from '@/data/view';
 import { useResource } from '@/hooks/useResource';
@@ -43,9 +51,12 @@ function newKey(): string {
 
 function sendErrorHeadline(e: unknown): string {
   if (e instanceof ApiError) {
+    if (e.status === 422) return 'Uncited claims detected';
+    if (e.status === 409 && e.message.includes('supervisor')) return 'Cannot auto-reply to supervisor request';
     if (e.isConflict) return 'This reply is already being sent';
     if (e.status === 0) return 'Could not confirm whether the reply was sent';
     if (e.status === 502) return 'Outlook rejected the reply';
+    if (e.status === 503) return 'AI service unavailable';
     if (e.isUnauthorized) return 'Not authorized to send';
   }
   return 'The reply was not sent';
@@ -58,6 +69,12 @@ function sendErrorHeadline(e: unknown): string {
  */
 function sendErrorDetail(e: unknown): string {
   if (e instanceof ApiError) {
+    if (e.status === 422) {
+      return 'Every factual claim must cite a policy chunk or an order field. Edit the draft to cite sources or remove uncited claims.';
+    }
+    if (e.status === 409 && e.message.includes('supervisor')) {
+      return 'This customer asked for a supervisor. Escalate to a human instead of sending an AI reply.';
+    }
     if (e.isConflict) {
       return 'Another send is already in flight for this message. Give it a moment, then refresh — it will not send twice.';
     }
@@ -65,6 +82,7 @@ function sendErrorDetail(e: unknown): string {
       return 'It may or may not have gone out. Press Try again — this resumes the same send and cannot email the customer twice. Do not rewrite the reply.';
     }
     if (e.status === 502) return `${e.message}. Press Try again once the mailbox recovers.`;
+    if (e.status === 503) return `${e.message}. Check ANTHROPIC_API_KEY or try again later.`;
   }
   return apiErrorMessage(e);
 }
@@ -81,13 +99,19 @@ export function TicketView() {
   );
 
   const [draft, setDraft] = useState<string | null>(null);
+  const [draftCitations, setDraftCitations] = useState<Citation[]>([]);
+  const [draftBlocked, setDraftBlocked] = useState(false);
+  const [draftUncited, setDraftUncited] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
+  const [checkingPolicy, setCheckingPolicy] = useState(false);
   const [escalating, setEscalating] = useState(false);
   const [logging, setLogging] = useState(false);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<unknown>(undefined);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   /**
    * One key per composed reply, minted lazily and reused across retries. This
@@ -146,14 +170,68 @@ export function TicketView() {
   const { customer, assignee: owner } = ticket;
   const brand = BRANDS[ticket.brand];
   const body = draft ?? ticket.aiDraft ?? '';
+  const citations = draftCitations.length > 0 ? draftCitations : ticket.citations;
   const closed = ticket.status === 'resolved' || ticket.status === 'closed';
+  const isSupervisor = ticket.intent === 'supervisor';
+  const wasEdited = draft !== null && draft !== ticket.aiDraft;
 
-  const regenerate = () => {
+  const regenerate = async () => {
     setGenerating(true);
-    window.setTimeout(() => {
-      setDraft(ticket.aiDraft ?? '');
+    setAiError(null);
+    setDraftBlocked(false);
+    setDraftUncited([]);
+
+    try {
+      const result = await generateDraft(ticket.id);
+      setDraft(result.text);
+      setDraftCitations(result.citations);
+      setDraftBlocked(result.blocked);
+      setDraftUncited(result.uncited);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setAiError(e.message);
+      } else {
+        setAiError('Failed to generate draft');
+      }
+    } finally {
       setGenerating(false);
-    }, 1100);
+    }
+  };
+
+  const doSummarize = async () => {
+    setSummarizing(true);
+    setAiError(null);
+
+    try {
+      await summarizeThread(ticket.id);
+      refetch();
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setAiError(e.message);
+      } else {
+        setAiError('Failed to summarize thread');
+      }
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const doPolicyCheck = async () => {
+    setCheckingPolicy(true);
+    setAiError(null);
+
+    try {
+      await checkPolicy(ticket.id);
+      refetch();
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setAiError(e.message);
+      } else {
+        setAiError('Failed to check policy');
+      }
+    } finally {
+      setCheckingPolicy(false);
+    }
   };
 
   const send = async () => {
@@ -161,17 +239,25 @@ export function TicketView() {
     setSending(true);
     setSendError(undefined);
 
+    const draftedByAi = Boolean(ticket.aiDraft) || draftCitations.length > 0;
+
     try {
-      await sendReply(ticket.id, body, idempotencyKey.current!);
+      await sendReply(ticket.id, {
+        body,
+        idempotencyKey: idempotencyKey.current!,
+        draftedByAi,
+        editedByHuman: wasEdited,
+        originalDraft: wasEdited ? ticket.aiDraft ?? undefined : undefined,
+        citations: citations.length > 0 ? { items: citations } : undefined,
+      });
       setSent(true);
-      // A fresh key: the next reply is a new message, not a retry of this one.
       idempotencyKey.current = newKey();
       setDraft('');
+      setDraftCitations([]);
+      setDraftBlocked(false);
+      setDraftUncited([]);
       refetch();
     } catch (e) {
-      // The key is deliberately NOT rotated here. Whatever went wrong, the
-      // message may already have gone out, and retrying under the same key is
-      // what stops the customer receiving it twice.
       setSendError(e);
     } finally {
       setSending(false);
@@ -240,22 +326,56 @@ export function TicketView() {
             </div>
           )}
 
-          {ticket.aiSummary.length > 0 && (
-            <div className="ai-summary fade-up">
-              <div className="ai-summary-head">
-                <Sparkles size={12} strokeWidth={2.4} />
-                Thread summary
-                <span className="ml-a t-xs t-ter" style={{ textTransform: 'none', letterSpacing: 0 }}>
-                  {ticket.messages.length} events
-                </span>
-              </div>
-              <ul className="ai-summary-body" style={{ margin: 0, paddingLeft: 17 }}>
-                {ticket.aiSummary.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
+          {isSupervisor && (
+            <div className="callout callout-danger" style={{ marginBottom: 14 }}>
+              <ShieldAlert size={14} style={{ flex: 'none', marginTop: 1 }} />
+              <span className="grow">
+                <strong>Supervisor escalation requested</strong>
+                <br />
+                This customer asked to speak with a supervisor. Do not auto-reply — escalate to a human.
+              </span>
             </div>
           )}
+
+          {aiError && (
+            <div className="callout callout-warn" style={{ marginBottom: 14 }}>
+              <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+              <span className="grow">{aiError}</span>
+              <button className="btn btn-sm btn-ghost" onClick={() => setAiError(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="ai-summary fade-up">
+            <div className="ai-summary-head">
+              <Sparkles size={12} strokeWidth={2.4} />
+              Thread summary
+              <span className="ml-a row gap-8" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                <span className="t-xs t-ter">{ticket.messages.length} events</span>
+                <button
+                  className="btn btn-xs btn-ghost"
+                  onClick={() => void doSummarize()}
+                  disabled={summarizing}
+                  title="Summarize thread with AI"
+                >
+                  {summarizing ? <RefreshCw size={11} className="spin" /> : <Sparkles size={11} />}
+                  {ticket.aiSummary.length > 0 ? 'Refresh' : 'Summarize'}
+                </button>
+              </span>
+            </div>
+            {ticket.aiSummary.length > 0 ? (
+              <ul className="ai-summary-body" style={{ margin: 0, paddingLeft: 17 }}>
+                {ticket.aiSummary.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="t-sm t-ter" style={{ lineHeight: 1.55, margin: '6px 0 0' }}>
+                Click Summarize to generate AI bullet points for this thread.
+              </p>
+            )}
+          </div>
 
           {/* No optimistic entry: the send writes the message before it
               responds, so the refetch shows what actually happened rather than
@@ -272,17 +392,20 @@ export function TicketView() {
             <span className="composer-label">
               Reply to {customer.name.split(' ')[0] ?? 'customer'}
             </span>
-            {ticket.aiDraft && !sent && (
+            {(ticket.aiDraft || draft) && !sent && (
               <span className="badge badge-accent">
-                <Sparkles size={10} /> AI draft
+                <Sparkles size={10} /> AI draft{wasEdited && ' · edited'}
               </span>
             )}
             <div className="ml-a row gap-6">
-              {ticket.aiDraft && (
-                <button className="btn btn-sm btn-ghost" onClick={regenerate} disabled={generating}>
-                  <RefreshCw size={12} className={generating ? 'spin' : undefined} /> Regenerate
-                </button>
-              )}
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => void regenerate()}
+                disabled={generating || closed}
+              >
+                <RefreshCw size={12} className={generating ? 'spin' : undefined} />
+                {ticket.aiDraft || draft ? 'Regenerate' : 'Generate draft'}
+              </button>
               <span className="t-xs t-ter">from {brand.mailbox}</span>
             </div>
           </div>
@@ -319,9 +442,19 @@ export function TicketView() {
               }
             />
 
-            {ticket.citations.length > 0 && (
+            {draftBlocked && (
+              <div className="citation-blocked">
+                <AlertTriangle size={12} />
+                <span>
+                  <strong>Blocked:</strong> {draftUncited.length} uncited claim{draftUncited.length === 1 ? '' : 's'}.
+                  Edit to cite sources before sending.
+                </span>
+              </div>
+            )}
+
+            {citations.length > 0 && (
               <div className="citation-strip">
-                {ticket.citations.map((c) => (
+                {citations.map((c) => (
                   <button key={c.n} className="citation" onClick={() => setOpenCitation(c)}>
                     <span className="citation-index">{c.n}</span>
                     {c.label}
@@ -474,21 +607,34 @@ export function TicketView() {
           </div>
         )}
 
-        {ticket.policyHits.length > 0 && (
-          <div className="rail-card">
-            <div className="rail-head">
-              <FileText size={11} /> Policy check
-            </div>
-            <div className="rail-body">
-              {ticket.policyHits.map((p) => (
-                <div className="policy-hit" key={p.title}>
+        <div className="rail-card">
+          <div className="rail-head">
+            <FileText size={11} /> Policy check
+            <button
+              className="btn btn-xs btn-ghost ml-a"
+              onClick={() => void doPolicyCheck()}
+              disabled={checkingPolicy}
+              title="Check relevant policies with AI"
+            >
+              {checkingPolicy ? <RefreshCw size={11} className="spin" /> : <Sparkles size={11} />}
+              {ticket.policyHits.length > 0 ? 'Refresh' : 'Check'}
+            </button>
+          </div>
+          <div className="rail-body">
+            {ticket.policyHits.length > 0 ? (
+              ticket.policyHits.map((p, i) => (
+                <div className="policy-hit" key={i}>
                   <strong>{p.title}</strong>
                   {p.text}
                 </div>
-              ))}
-            </div>
+              ))
+            ) : (
+              <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+                Click Check to find relevant policies for this ticket.
+              </p>
+            )}
           </div>
-        )}
+        </div>
 
         {ticket.similar.length > 0 && (
           <div className="rail-card">

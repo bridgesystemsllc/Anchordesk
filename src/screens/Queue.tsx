@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Check, Inbox, RefreshCw, Sparkles, UserPlus, X } from 'lucide-react';
+import { AlertTriangle, Check, Inbox, RefreshCw, ShieldAlert, Sparkles, UserPlus, X } from 'lucide-react';
 import { BRAND_ORDER, BRANDS, INTENT_SHORT, STATUS_LABEL } from '@/data/brands';
 import { AGENTS, ME } from '@/data/mock';
 import { isLive, listQueue } from '@/data/source';
@@ -289,6 +289,11 @@ function Row({
         <div className="row gap-6">
           {t.unread && <span className="unread-mark" />}
           <span className="queue-subject-line">{t.subject}</span>
+          {t.intent === 'supervisor' && (
+            <span className="supervisor-badge" title="Customer requested supervisor escalation">
+              <ShieldAlert size={11} strokeWidth={2.5} />
+            </span>
+          )}
           {t.aiDraftReady && (
             <span className="ai-ready" title="AI draft ready to review">
               <Sparkles size={9} strokeWidth={2.5} /> DRAFT

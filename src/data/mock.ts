@@ -127,6 +127,7 @@ export const TICKETS: Ticket[] = [
       { title: 'VIP handling', text: 'Customers with 10+ lifetime orders get expedited service on any reship.' },
     ],
     tags: ['carrier-exception', 'vip'],
+    similar: [],
     messages: [
       msg('inbound', 'Tanya Whitfield', "Hi — I ordered the Goddess Strength set on the 5th and tracking hasn't moved since the 6th. It's been sitting in Bolingbrook for almost a week. I've reordered this set three times before and never had an issue. Can you send a replacement? I don't want a refund, I just want the product.", ago(38), { authorEmail: 'tanya.whitfield@gmail.com' }),
       msg('system', 'Anchor Desk', 'Order CD-118402 auto-attached from Shopify · fulfillment exception detected', ago(38)),
@@ -178,6 +179,7 @@ export const TICKETS: Ticket[] = [
       { title: 'Damage — 30 day window', text: 'Photo evidence within 30 days → automatic replacement, no return.' },
     ],
     tags: ['damage', 'packaging', 'sku-spike'],
+    similar: [],
     messages: [
       msg('inbound', 'Priscilla Nwosu', 'The compact was shattered inside the box — both of them actually. Photos attached. The outer box was fine so I think they were packed loose.', ago(126), { authorEmail: 'p.nwosu@icloud.com' }),
       msg('system', 'Anchor Desk', '2 attachments ingested · triaged as damage · priority raised to P1 (VIP + negative sentiment)', ago(126)),
@@ -227,6 +229,7 @@ export const TICKETS: Ticket[] = [
       { title: 'Return — 30 day window', text: 'Delivered 21 days ago. 9 days remaining. Unopened → full refund.' },
     ],
     tags: ['return'],
+    similar: [],
     messages: [
       msg('inbound', 'Ivy Chen', 'It broke me out worse than before. The box is unopened — I bought it 3 weeks ago. Can I send it back?', ago(214), { authorEmail: 'ivy.chen@gmail.com' }),
       msg('outbound', 'Devon Park', "Hi Ivy — I'm sorry to hear that. Let me check your order date and get right back to you.", ago(94), { draftedByAi: true, editedByHuman: true }),
@@ -273,6 +276,7 @@ export const TICKETS: Ticket[] = [
       { title: 'Refund authority', text: 'Agents may issue up to $25 without approval. $38.40 requires a lead.' },
     ],
     tags: ['billing', 'duplicate-charge'],
+    similar: [],
     messages: [
       msg('inbound', 'Hannah Lindqvist', 'My bank shows two $38.40 charges from Ambi on the same day. I only placed one order. Please fix this.', ago(300), { authorEmail: 'hlindqvist@proton.me' }),
       msg('outbound', 'Renata Cole', "Hi Hannah — I can see both authorizations. I'm getting the duplicate voided today and will confirm as soon as it clears.", ago(240)),
@@ -308,6 +312,7 @@ export const TICKETS: Ticket[] = [
     ],
     policyHits: [],
     tags: ['pre-sale'],
+    similar: [],
     messages: [
       msg('inbound', 'Omar Haddad', 'Curious whether the clay will dry out my scalp — I shave my head. Thanks.', ago(58), { authorEmail: 'omar.haddad@gmail.com' }),
     ],
@@ -347,6 +352,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [{ title: 'Mis-pick under $25', text: 'Do not request return. Ship correct item and let the customer keep the error.' }],
     tags: ['mis-pick', 'fulfillment'],
+    similar: [],
     messages: [
       msg('inbound', 'Denise Alvarez', 'The packing slip says Wash Day Delight but the bottle in the box is the Monoi mask. I need the shampoo.', ago(420), { authorEmail: 'dalvarez@yahoo.com' }),
       msg('outbound', 'Priya Raman', "Hi Denise — apologies for the mix-up. I've put the correct shampoo on its way to you and you're welcome to keep the mask.", ago(180), { draftedByAi: true, editedByHuman: true }),
@@ -375,6 +381,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [],
     tags: ['pre-sale'],
+    similar: [],
     messages: [msg('inbound', 'Rashad Miller', 'Wedding next week, need to know if it rubs off on clothes. Thanks.', ago(95), { authorEmail: 'rashad.m@gmail.com' })],
   },
   {
@@ -412,6 +419,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [{ title: 'Component defect', text: 'Dispenser failures within 90 days → replacement, no return, no photo required.' }],
     tags: ['defect', 'sku-spike'],
+    similar: [],
     messages: [msg('inbound', 'Luis Ortega', 'Pump clicks but nothing comes out. This is the second one this month that did it.', ago(72), { authorEmail: 'l.ortega@gmail.com' })],
   },
   {
@@ -439,6 +447,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [{ title: 'Subscription cut-off', text: 'Cancellations after the 25th take effect the following cycle. Goodwill refund permitted up to $25.' }],
     tags: ['subscription'],
+    similar: [],
     messages: [
       msg('inbound', 'Grace Mbeki', 'I cancelled on the 28th and was still billed on the 1st. Please refund.', ago(160), { authorEmail: 'gmbeki@hotmail.com' }),
       msg('note', 'Devon Park', 'Confirmed cancel timestamp 7/28 21:04 — after cut-off. Issuing goodwill refund.', ago(88)),
@@ -479,6 +488,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [{ title: 'Delivered-not-received', text: 'Wait 48h from the delivery scan, then reship once per rolling 12 months.' }],
     tags: ['dnr'],
+    similar: [],
     messages: [
       msg('call', 'Renata Cole', 'Inbound call · 6:12 · customer reports non-delivery. Advised 48h wait per policy, callback scheduled.', ago(340)),
       msg('note', 'Renata Cole', '48h elapses tomorrow 9am. Reship if nothing surfaces.', ago(220)),
@@ -506,6 +516,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [],
     tags: ['praise'],
+    similar: [],
     messages: [
       msg('inbound', 'Marcus Bell', 'Just wanted to say the Monoi mask saved my hair after bleaching. Genuinely.', ago(1400), { authorEmail: 'm.bell84@outlook.com' }),
       msg('outbound', 'Priya Raman', "Marcus, this made our morning. Thank you for taking the time to write — I've passed it on to the product team.", ago(1200), { draftedByAi: true }),
@@ -533,6 +544,7 @@ export const TICKETS: Ticket[] = [
     citations: [],
     policyHits: [],
     tags: [],
+    similar: [],
     messages: [
       msg('inbound', 'Jordan Fisk', 'Between 30N and 35N, not sure which. Any way to tell?', ago(2100), { authorEmail: 'jfisk@fastmail.com' }),
       msg('outbound', 'Miles Okonkwo', 'Go with 30N — the drops build, so the lighter base gives you room. Undertone guide attached.', ago(1900), { draftedByAi: true, editedByHuman: true }),

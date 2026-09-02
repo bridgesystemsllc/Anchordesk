@@ -34,6 +34,7 @@ function apiRow(overrides: Partial<ApiQueueRow> = {}): ApiQueueRow {
     tags: [],
     preview: 'The compact was shattered inside the box.',
     messageCount: 2,
+    aiDraftReady: false,
     customerId: '9e60a813-5f9a-463e-8738-2d103dc5a0d4',
     customerName: 'Priscilla Nwosu',
     customerEmail: 'p.nwosu@icloud.com',
