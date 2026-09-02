@@ -11,6 +11,8 @@ the Desk drafts, a human sends.
 
 ## Status
 
+For operational procedures, health monitoring, and troubleshooting, see [`docs/runbook.md`](docs/runbook.md).
+
 **Frontend** — every screen from §6, running against a demo dataset shaped like the §5 model.
 
 | Screen | Route | State |

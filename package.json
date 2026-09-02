@@ -15,7 +15,9 @@
     "db:seed": "tsx server/scripts/seed-dev.ts",
     "ingest:backfill": "tsx server/scripts/backfill.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ops:renewal-drill": "tsx server/scripts/renewal-drill.ts",
+    "ops:pilot-gate": "tsx server/scripts/pilot-gate.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.5.0",

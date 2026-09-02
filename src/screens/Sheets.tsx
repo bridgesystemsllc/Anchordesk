@@ -1,10 +1,18 @@
 import { useState } from 'react';
-import { ArrowDownUp, ExternalLink, Plus, RefreshCw, Table2 } from 'lucide-react';
+import { AlertTriangle, ArrowDownUp, ExternalLink, Plus, RefreshCw, Table2 } from 'lucide-react';
+import { EmptyState } from '@/components/ui';
 import { SHEETS } from '@/data/mock';
 import { INTENT_SHORT } from '@/data/brands';
 import { cx, shortAge } from '@/lib/utils';
 
-export function Sheets() {
+export type SheetsStatus = 'ready' | 'loading' | 'empty' | 'error';
+
+export interface SheetsViewProps {
+  status?: SheetsStatus;
+  onRetry?: () => void;
+}
+
+export function SheetsView({ status = 'ready', onRetry }: SheetsViewProps) {
   const [activeId, setActiveId] = useState(SHEETS[0]!.id);
   const [appended, setAppended] = useState<string[] | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -26,6 +34,68 @@ export function Sheets() {
       setSyncing(false);
     }, 900);
   };
+
+  if (status === 'loading') {
+    return (
+      <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Sheets</h1>
+            <p className="page-sub">Loading workbooks...</p>
+          </div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <RefreshCw size={24} className="spin" style={{ color: 'var(--text-tertiary)' }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'empty') {
+    return (
+      <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Sheets</h1>
+            <p className="page-sub">No workbooks configured</p>
+          </div>
+        </div>
+        <EmptyState
+          glyph={<Table2 size={26} />}
+          title="No workbooks"
+          body="No Excel bindings are configured. Add a workbook binding in Settings to start."
+        />
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Sheets</h1>
+            <p className="page-sub">Error loading workbooks</p>
+          </div>
+        </div>
+        <div className="callout callout-warn" style={{ margin: '24px 0' }}>
+          <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+          <div>
+            <strong>Workbook could not be loaded</strong>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+              The Desk could not read this sheet. Live Graph workbook sessions are not this ticket.
+              The last good grid stays if we had one.
+            </p>
+          </div>
+        </div>
+        {onRetry && (
+          <button className="btn btn-primary" onClick={onRetry} style={{ alignSelf: 'flex-start' }}>
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -126,4 +196,8 @@ export function Sheets() {
       </p>
     </div>
   );
+}
+
+export function Sheets() {
+  return <SheetsView status="ready" />;
 }

@@ -8,6 +8,7 @@ import {
   Laptop,
   Moon,
   Palette,
+  RefreshCw,
   Route,
   Sparkles,
   Sun,
@@ -17,7 +18,8 @@ import {
 import { Avatar, Badge, Toggle } from '@/components/ui';
 import { BRANDS, BRAND_ORDER, INTENT_SHORT } from '@/data/brands';
 import { AGENTS, SHEETS } from '@/data/mock';
-import { apiGet, apiPost, apiPut, apiErrorMessage, isLive } from '@/lib/api';
+import { getIngestHealth, type IngestHealth, isLive } from '@/data/source';
+import { apiGet, apiPost, apiPut, apiErrorMessage } from '@/lib/api';
 import { useTheme, type ThemePref } from '@/lib/theme';
 import { cx, fullStamp, shortAge } from '@/lib/utils';
 
@@ -178,20 +180,75 @@ function Appearance() {
 }
 
 function Mailboxes() {
+  const [health, setHealth] = useState<IngestHealth | null>(null);
+  const [loading, setLoading] = useState(isLive);
+  const [_error, setError] = useState<string | null>(null);
+
+  const fetchHealth = async () => {
+    if (!isLive) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getIngestHealth();
+      setHealth(data);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchHealth();
+  }, []);
+
+  const unhealthyMailboxes = health?.mailboxes.filter((m) => !m.healthy) ?? [];
+  const hasExpired = unhealthyMailboxes.some((m) => m.problems.includes('subscription-expired'));
+
   return (
     <>
       <div className="callout callout-warn" style={{ marginBottom: 12 }}>
         <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
         <span>
-          Graph change-notification subscriptions expire every <strong>3 days</strong>. The renewal
-          job runs hourly and alerts on failure — this is the number one way a system like this stops
-          working silently.
+          Graph change-notification subscriptions last <strong>10,080 minutes</strong> (under 7 days).
+          We request <strong>6 days</strong> and renew with a <strong>24-hour lead</strong>, so a full
+          day of renewal failures still can't drop a subscription. Point the monitor at{' '}
+          <code className="mono">GET /api/health/ingest</code> and page on a non-200. Run the renewal
+          dry-run: <code className="mono">POST /api/health/renewal-drill</code>.
         </span>
       </div>
 
-      <Panel title="Brand mailboxes" hint="5 connected">
+      {isLive && !loading && unhealthyMailboxes.length > 0 && (
+        <div className="callout callout-warn" style={{ marginBottom: 12, background: 'var(--danger-bg)', borderColor: 'var(--danger)' }}>
+          <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1, color: 'var(--danger)' }} />
+          <div>
+            <div className="row gap-8" style={{ marginBottom: 6 }}>
+              <strong style={{ color: 'var(--danger)' }}>Mailbox ingest is unhealthy</strong>
+              <Badge tone={hasExpired ? 'danger' : 'warning'}>{hasExpired ? 'Expired' : 'Down'}</Badge>
+            </div>
+            {unhealthyMailboxes.map((m) => (
+              <div key={m.address} style={{ fontSize: 13, marginBottom: 4 }}>
+                <strong>{BRANDS[m.brand as keyof typeof BRANDS]?.name ?? m.brand}</strong>{' '}
+                <span className="mono">{m.address}</span>: {m.problems.join(', ')}
+              </div>
+            ))}
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={fetchHealth}
+              style={{ marginTop: 8 }}
+            >
+              <RefreshCw size={12} /> Retry health
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Panel title="Brand mailboxes" hint={loading ? 'Loading...' : `${BRAND_ORDER.length} connected`}>
         {BRAND_ORDER.map((code) => {
           const b = BRANDS[code];
+          const mailboxHealth = health?.mailboxes.find((m) => m.brand === code);
+          const isHealthy = mailboxHealth?.healthy ?? true;
+          const problems = mailboxHealth?.problems ?? [];
           return (
             <Row
               key={code}
@@ -213,9 +270,15 @@ function Mailboxes() {
               }
               control={
                 <>
-                  <Badge tone="success" dot>
-                    Syncing
-                  </Badge>
+                  {isHealthy ? (
+                    <Badge tone="success" dot>
+                      Syncing
+                    </Badge>
+                  ) : problems.includes('subscription-expired') ? (
+                    <Badge tone="danger">Expired</Badge>
+                  ) : (
+                    <Badge tone="warning">Down</Badge>
+                  )}
                   <button className="btn btn-sm btn-secondary">Edit</button>
                 </>
               }

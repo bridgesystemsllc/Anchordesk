@@ -1,12 +1,30 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { enabledMailboxes } from '../ingest/mailboxes';
 import { ingestQueue } from '../lib/serial';
 import { env } from '../env';
 import { errFields, log } from '../log';
+import { runRenewalDrill } from '../graph/renewalDrill';
 
 export const healthRouter = Router();
+
+function requireApiToken(req: Request, res: Response, next: NextFunction) {
+  const expected = env.API_AUTH_TOKEN;
+  if (!expected) return next();
+
+  const header = req.get('authorization') ?? '';
+  const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(presented, 'utf8');
+
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  next();
+}
 
 /** A mailbox that hasn't synced in this long is a problem worth paging on. */
 const STALE_SYNC_MS = 45 * 60_000;
@@ -71,4 +89,26 @@ healthRouter.get('/health/ingest', async (_req, res) => {
     subscriptionsEnabled: env.ENABLE_SUBSCRIPTIONS,
     schedulerEnabled: env.ENABLE_SCHEDULER,
   });
+});
+
+/**
+ * Renewal drill dry-run. Evaluates what the subscription renewal job WOULD do
+ * without calling Graph. Requires Bearer auth when API_AUTH_TOKEN is set.
+ * Always inserts one cs_ops_drills row. Two POSTs = two rows (allowed).
+ */
+healthRouter.post('/health/renewal-drill', requireApiToken, async (_req, res) => {
+  try {
+    const result = await runRenewalDrill();
+    res.status(result.ok ? 200 : 503).json(result);
+  } catch (e) {
+    log.error('renewal drill failed', errFields(e));
+    res.status(503).json({
+      ok: false,
+      dryRun: true,
+      firedAt: new Date().toISOString(),
+      logEvent: 'renewal_drill_fired',
+      mailboxes: [],
+      error: 'internal',
+    });
+  }
 });
