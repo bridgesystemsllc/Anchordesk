@@ -14,6 +14,8 @@ import { notificationsRouter } from './routes/notifications';
 import { ticketsRouter } from './routes/tickets';
 import { assistRouter } from './routes/assist';
 import { kbRouter } from './routes/kb';
+import { settingsRouter } from './routes/settings';
+import { excelRouter } from './routes/excel';
 
 /** Graph notification payloads are small; anything larger is not from Graph. */
 const BODY_LIMIT = '1mb';
@@ -49,6 +51,8 @@ export function createApp() {
   app.use('/api', requireApiToken, ticketsRouter);
   app.use('/api', requireApiToken, assistRouter);
   app.use('/api', requireApiToken, kbRouter);
+  app.use('/api', requireApiToken, settingsRouter);
+  app.use('/api', requireApiToken, excelRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'not_found' }));
 

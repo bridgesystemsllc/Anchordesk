@@ -21,6 +21,7 @@ import {
   Sparkles,
   Star,
   StickyNote,
+  Table2,
   User,
 } from 'lucide-react';
 import { EscalateModal } from '@/components/EscalateModal';
@@ -34,6 +35,12 @@ import {
   isLive,
   sendReply,
   summarizeThread,
+  getExcelBindings,
+  getExcelPreview,
+  appendExcelRow,
+  resolveTicket,
+  type ExcelBinding,
+  type ExcelPreview,
 } from '@/data/source';
 import type { Citation, Message } from '@/data/types';
 import type { TicketDetail } from '@/data/view';
@@ -112,6 +119,16 @@ export function TicketView() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<unknown>(undefined);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const [excelBindings, setExcelBindings] = useState<ExcelBinding[]>([]);
+  const [selectedBinding, setSelectedBinding] = useState<string | null>(null);
+  const [excelPreview, setExcelPreview] = useState<ExcelPreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [appending, setAppending] = useState(false);
+  const [appendSuccess, setAppendSuccess] = useState<string | null>(null);
+  const [appendError, setAppendError] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   /**
    * One key per composed reply, minted lazily and reused across retries. This
@@ -264,6 +281,109 @@ export function TicketView() {
     }
   };
 
+  const loadBindings = async () => {
+    try {
+      const bindings = await getExcelBindings();
+      setExcelBindings(bindings);
+      if (bindings.length > 0 && !selectedBinding) {
+        setSelectedBinding(bindings[0]!.id);
+      }
+    } catch {
+      setExcelBindings([]);
+    }
+  };
+
+  const loadPreview = async (bindingId: string) => {
+    setLoadingPreview(true);
+    setPreviewError(null);
+    setAppendError(null);
+    setAppendSuccess(null);
+    try {
+      const preview = await getExcelPreview(bindingId);
+      setExcelPreview(preview);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 503 || e.status === 401) {
+          setPreviewError('Sheets could not be loaded');
+        } else if (e.status === 404) {
+          setPreviewError('Binding not found');
+        } else {
+          setPreviewError('Sheets could not be loaded');
+        }
+      } else {
+        setPreviewError('Sheets could not be loaded');
+      }
+      setExcelPreview(null);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const doAppend = async () => {
+    if (!selectedBinding || !ticket) return;
+    setAppending(true);
+    setAppendError(null);
+    setAppendSuccess(null);
+    try {
+      const result = await appendExcelRow(selectedBinding, ticket.id);
+      if (result.ok) {
+        const binding = excelBindings.find((b) => b.id === selectedBinding);
+        setAppendSuccess(`Row appended to ${binding?.name ?? 'Returns Log'}`);
+        loadPreview(selectedBinding);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 409) {
+          setAppendError('Row already appended');
+        } else if (e.status === 503) {
+          setAppendError('Row could not be appended');
+        } else if (e.status === 404) {
+          setAppendError('Binding not found');
+        } else {
+          setAppendError('Row could not be appended');
+        }
+      } else {
+        setAppendError('Row could not be appended');
+      }
+    } finally {
+      setAppending(false);
+    }
+  };
+
+  const doResolve = async () => {
+    if (!ticket || resolving) return;
+    setResolving(true);
+    try {
+      const result = await resolveTicket(ticket.id);
+      if (result.ok) {
+        const successAppends = result.appends.filter((a) => a.ok);
+        if (successAppends.length > 0) {
+          const binding = excelBindings.find((b) => b.id === successAppends[0]?.bindingId);
+          setAppendSuccess(`Row appended to ${binding?.name ?? 'Returns Log'}`);
+        }
+        refetch();
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setAiError(e.message);
+      } else {
+        setAiError('Failed to resolve ticket');
+      }
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  // Load bindings on mount
+  if (excelBindings.length === 0 && ticket) {
+    void loadBindings();
+  }
+
+  // Load preview when binding selection changes
+  if (selectedBinding && !excelPreview && !loadingPreview && !previewError) {
+    void loadPreview(selectedBinding);
+  }
+
   return (
     <div className="ticket-layout">
       <section className="ticket-main">
@@ -283,8 +403,13 @@ export function TicketView() {
               <button className="btn btn-sm btn-secondary" onClick={() => setEscalating(true)}>
                 <ArrowUpRight size={13} /> Escalate
               </button>
-              <button className="btn btn-sm btn-primary">
-                <Check size={13} /> Resolve
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => void doResolve()}
+                disabled={resolving || closed}
+              >
+                {resolving ? <RefreshCw size={13} className="spin" /> : <Check size={13} />}
+                {resolving ? 'Resolving…' : 'Resolve'}
               </button>
             </div>
           </div>
@@ -655,6 +780,136 @@ export function TicketView() {
             </div>
           </div>
         )}
+
+        <div className="rail-card">
+          <div className="rail-head">
+            <Table2 size={11} /> Excel
+            {excelPreview?.demo && (
+              <span className="badge badge-neutral ml-a" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                Using demo Excel
+              </span>
+            )}
+          </div>
+          <div className="rail-body">
+            {excelBindings.length > 0 ? (
+              <>
+                <select
+                  className="form-select"
+                  style={{ width: '100%', marginBottom: 8 }}
+                  value={selectedBinding ?? ''}
+                  onChange={(e) => {
+                    setSelectedBinding(e.target.value);
+                    setExcelPreview(null);
+                    setPreviewError(null);
+                    setAppendError(null);
+                    setAppendSuccess(null);
+                    if (e.target.value) void loadPreview(e.target.value);
+                  }}
+                >
+                  {excelBindings.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+
+                {previewError && (
+                  <div className="callout callout-warn" style={{ marginBottom: 8, fontSize: 12 }}>
+                    <AlertTriangle size={12} style={{ flex: 'none', marginTop: 1 }} />
+                    <span>{previewError}</span>
+                  </div>
+                )}
+
+                {appendError && (
+                  <div className="callout callout-warn" style={{ marginBottom: 8, fontSize: 12 }}>
+                    <AlertTriangle size={12} style={{ flex: 'none', marginTop: 1 }} />
+                    <span>{appendError}</span>
+                  </div>
+                )}
+
+                {appendSuccess && (
+                  <div className="callout callout-accent" style={{ marginBottom: 8, fontSize: 12 }}>
+                    <Check size={12} style={{ flex: 'none', marginTop: 1 }} />
+                    <span>{appendSuccess}</span>
+                  </div>
+                )}
+
+                {loadingPreview ? (
+                  <div className="t-sm t-ter" style={{ padding: '8px 0' }}>
+                    <RefreshCw size={12} className="spin" style={{ marginRight: 6, verticalAlign: -2 }} />
+                    Loading preview…
+                  </div>
+                ) : excelPreview ? (
+                  <>
+                    <div className="t-xs t-ter" style={{ marginBottom: 6 }}>
+                      {excelPreview.worksheet} · {excelPreview.columns.length} columns · {excelPreview.rows.length} rows
+                    </div>
+                    <div style={{ maxHeight: 120, overflow: 'auto', fontSize: 11, marginBottom: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            {excelPreview.columns.map((col, i) => (
+                              <th
+                                key={i}
+                                style={{
+                                  textAlign: 'left',
+                                  padding: '2px 4px',
+                                  borderBottom: '1px solid var(--border)',
+                                  fontWeight: 600,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {excelPreview.rows.slice(-3).map((row, ri) => (
+                            <tr key={ri}>
+                              {row.map((cell, ci) => (
+                                <td
+                                  key={ci}
+                                  style={{
+                                    padding: '2px 4px',
+                                    borderBottom: '1px solid var(--border-light)',
+                                    whiteSpace: 'nowrap',
+                                    maxWidth: 80,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}
+                                >
+                                  {cell}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => void doAppend()}
+                      disabled={appending || closed}
+                      style={{ width: '100%' }}
+                    >
+                      {appending ? (
+                        <RefreshCw size={12} className="spin" />
+                      ) : (
+                        <Table2 size={12} />
+                      )}
+                      {appending ? 'Appending…' : 'Append row'}
+                    </button>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+                No Excel bindings configured. Add bindings in Settings → Excel bindings.
+              </p>
+            )}
+          </div>
+        </div>
 
         <div className="rail-card">
           <div className="rail-head">
