@@ -375,6 +375,31 @@ export const csRoutingRules = pgTable(
 );
 
 /**
+ * Teams escalations (AD-105). Each row is one escalation post to a Teams channel.
+ * teamsMessageId is the Graph message id returned by the channel POST, or
+ * "fixture-msg" when GRAPH_ACCESS_TOKEN is unset (demo mode).
+ */
+export const csEscalations = pgTable(
+  'cs_escalations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => csTickets.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id').notNull(),
+    teamsMessageId: text('teams_message_id'),
+    claimedBy: text('claimed_by'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    payload: jsonb('payload'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('cs_escalations_ticket_idx').on(t.ticketId, t.createdAt.desc()),
+    index('cs_escalations_channel_idx').on(t.channelId),
+  ],
+);
+
+/**
  * Excel workbook bindings for data export. Each binding maps to a worksheet
  * in a Graph workbook. Live sessions are AD-107. Field map lives in payload.map.
  */

@@ -402,3 +402,77 @@ export async function resolveTicket(ticketId: string): Promise<ResolveResult> {
   }
   return apiPost<ResolveResult>(`/api/tickets/${encodeURIComponent(ticketId)}/resolve`, {});
 }
+
+export interface CreateEscalationResult {
+  ok: boolean;
+  escalationId: string;
+  teamsMessageId: string;
+  deepLink: string;
+}
+
+export interface ClaimEscalationResult {
+  ok: boolean;
+  escalationId: string;
+  claimedBy: string;
+  claimedAt: string;
+}
+
+export interface Escalation {
+  id: string;
+  ticketId: string;
+  channelId: string;
+  teamsMessageId: string | null;
+  claimedBy: string | null;
+  claimedAt: string | null;
+  createdAt: string;
+}
+
+export interface GetEscalationsResult {
+  escalations: Escalation[];
+}
+
+export async function createEscalation(
+  ticketId: string,
+  channelId: string,
+  userId?: string,
+): Promise<CreateEscalationResult> {
+  if (!isLive) {
+    return {
+      ok: true,
+      escalationId: 'demo-escalation',
+      teamsMessageId: 'fixture-msg',
+      deepLink: 'https://teams.microsoft.com/l/message/demo/fixture-msg',
+    };
+  }
+  return apiPost<CreateEscalationResult>('/api/escalations', {
+    ticketId,
+    channelId,
+    userId,
+  });
+}
+
+export async function claimEscalation(
+  escalationId: string,
+  userId: string,
+): Promise<ClaimEscalationResult> {
+  if (!isLive) {
+    return {
+      ok: true,
+      escalationId,
+      claimedBy: userId,
+      claimedAt: new Date().toISOString(),
+    };
+  }
+  return apiPost<ClaimEscalationResult>(
+    `/api/escalations/${encodeURIComponent(escalationId)}/claim`,
+    { userId },
+  );
+}
+
+export async function getEscalations(ticketId: string, signal?: AbortSignal): Promise<GetEscalationsResult> {
+  if (!isLive) {
+    return { escalations: [] };
+  }
+  const params = new URLSearchParams({ ticketId });
+  return apiGet<GetEscalationsResult>(`/api/escalations?${params}`, signal);
+}
