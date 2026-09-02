@@ -198,7 +198,7 @@ export async function checkPolicy(ticketId: string): Promise<PolicyCheckResult> 
     .limit(1);
 
   const query = `${ticket.subject ?? ''} ${lastInbound?.bodyText ?? ''}`.trim();
-  const chunks = await retriever.retrieve(query, { brandCode: ticket.brandId, limit: 6 });
+  const chunks = await retriever.retrieve(query, { brand: ticket.brandId, limit: 6 });
 
   if (chunks.length === 0) {
     const runId = await recordRun({

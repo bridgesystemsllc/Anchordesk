@@ -13,6 +13,7 @@ import { healthRouter } from './routes/health';
 import { notificationsRouter } from './routes/notifications';
 import { ticketsRouter } from './routes/tickets';
 import { assistRouter } from './routes/assist';
+import { kbRouter } from './routes/kb';
 
 /** Graph notification payloads are small; anything larger is not from Graph. */
 const BODY_LIMIT = '1mb';
@@ -47,6 +48,7 @@ export function createApp() {
   app.use('/api/graph', notificationsRouter);
   app.use('/api', requireApiToken, ticketsRouter);
   app.use('/api', requireApiToken, assistRouter);
+  app.use('/api', requireApiToken, kbRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'not_found' }));
 

@@ -80,7 +80,7 @@ export async function assembleDraftContext(ticketId: string): Promise<DraftConte
   const query = `${ticket.subject ?? ''} ${lastInbound?.body ?? ''}`.trim();
 
   const chunks = await retriever.retrieve(query, {
-    brandCode: ticket.brandId,
+    brand: ticket.brandId,
     limit: 6,
   });
 

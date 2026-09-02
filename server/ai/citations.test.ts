@@ -5,8 +5,8 @@ import type { OrderContext } from './context';
 
 describe('enforceCitations', () => {
   const chunks: KbChunk[] = [
-    { id: 'chunk1', title: 'Return Policy', text: 'Items can be returned within 30 days.', brandCode: 'CD', source: 'kb' },
-    { id: 'chunk2', title: 'Shipping Policy', text: 'Free shipping on orders over $50.', brandCode: 'CD', source: 'kb' },
+    { id: 'chunk1', title: 'Return Policy', text: 'Items can be returned within 30 days.' },
+    { id: 'chunk2', title: 'Shipping Policy', text: 'Free shipping on orders over $50.' },
   ];
 
   const order: OrderContext = {

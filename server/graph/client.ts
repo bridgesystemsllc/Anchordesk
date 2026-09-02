@@ -120,3 +120,127 @@ export async function graphRequest<T>(pathOrUrl: string, opts: RequestOptions = 
 
   throw new Error(`Graph request exhausted retries: ${method} ${url}`, { cause: lastError });
 }
+
+/**
+ * Graph call returning raw text content. Used for SharePoint document content
+ * that isn't JSON (e.g. plain text preview).
+ */
+export async function graphRequestText(pathOrUrl: string, opts: Omit<RequestOptions, 'body'> = {}): Promise<string> {
+  const url = opts.absolute ? pathOrUrl : `${GRAPH_BASE}${pathOrUrl}`;
+  const method = opts.method ?? 'GET';
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch(url, {
+        method,
+        signal: timeout,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'text/plain',
+          ...opts.headers,
+        },
+      });
+
+      if (res.ok) {
+        return await res.text();
+      }
+
+      const error = await readError(res, url);
+
+      if (!RETRYABLE_STATUS.has(res.status) || attempt === MAX_ATTEMPTS) throw error;
+
+      const delay = computeDelay(attempt, res.headers.get('retry-after'));
+      log.warn('graph text request throttled, backing off', {
+        url,
+        status: res.status,
+        code: error.code,
+        attempt,
+        delayMs: delay,
+      });
+      await sleep(delay);
+      lastError = error;
+      continue;
+    } catch (e) {
+      if (e instanceof GraphError && (!RETRYABLE_STATUS.has(e.status) || attempt === MAX_ATTEMPTS)) {
+        throw e;
+      }
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error(`Graph text request failed after ${MAX_ATTEMPTS} attempts: ${method} ${url}`, {
+          cause: e,
+        });
+      }
+      lastError = e;
+      const delay = computeDelay(attempt);
+      log.warn('graph text request failed, retrying', { url, attempt, delayMs: delay, ...errFields(e) });
+      await sleep(delay);
+    }
+  }
+
+  throw new Error(`Graph text request exhausted retries: ${method} ${url}`, { cause: lastError });
+}
+
+/**
+ * Graph call returning raw bytes. Used for downloading SharePoint document
+ * content (PDF, DOCX, etc).
+ */
+export async function graphRequestBytes(pathOrUrl: string, opts: Omit<RequestOptions, 'body'> = {}): Promise<Buffer> {
+  const url = opts.absolute ? pathOrUrl : `${GRAPH_BASE}${pathOrUrl}`;
+  const method = opts.method ?? 'GET';
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch(url, {
+        method,
+        signal: timeout,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...opts.headers,
+        },
+      });
+
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      }
+
+      const error = await readError(res, url);
+
+      if (!RETRYABLE_STATUS.has(res.status) || attempt === MAX_ATTEMPTS) throw error;
+
+      const delay = computeDelay(attempt, res.headers.get('retry-after'));
+      log.warn('graph bytes request throttled, backing off', {
+        url,
+        status: res.status,
+        code: error.code,
+        attempt,
+        delayMs: delay,
+      });
+      await sleep(delay);
+      lastError = error;
+      continue;
+    } catch (e) {
+      if (e instanceof GraphError && (!RETRYABLE_STATUS.has(e.status) || attempt === MAX_ATTEMPTS)) {
+        throw e;
+      }
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error(`Graph bytes request failed after ${MAX_ATTEMPTS} attempts: ${method} ${url}`, {
+          cause: e,
+        });
+      }
+      lastError = e;
+      const delay = computeDelay(attempt);
+      log.warn('graph bytes request failed, retrying', { url, attempt, delayMs: delay, ...errFields(e) });
+      await sleep(delay);
+    }
+  }
+
+  throw new Error(`Graph bytes request exhausted retries: ${method} ${url}`, { cause: lastError });
+}

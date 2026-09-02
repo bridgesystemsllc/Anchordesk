@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   AlertTriangle,
   BookOpen,
@@ -17,6 +17,7 @@ import {
 import { Avatar, Badge, Toggle } from '@/components/ui';
 import { BRANDS, BRAND_ORDER, INTENT_SHORT } from '@/data/brands';
 import { AGENTS, SHEETS } from '@/data/mock';
+import { apiGet, apiPost, apiPut, apiErrorMessage, isLive } from '@/lib/api';
 import { useTheme, type ThemePref } from '@/lib/theme';
 import { cx, fullStamp, shortAge } from '@/lib/utils';
 
@@ -330,30 +331,252 @@ function Routing() {
   );
 }
 
+interface KbSettings {
+  siteId: string | null;
+  driveId: string | null;
+  folderPath: string;
+  lastCrawlAt: string | null;
+  crawlStatus: string;
+  crawlError: string | null;
+}
+
+interface KbSource {
+  id: string;
+  name: string;
+  path: string;
+  chunkCount: number;
+  indexedAt: string | null;
+  brandCode: string | null;
+}
+
+interface KbSourcesResponse {
+  sources: KbSource[];
+  totalSources: number;
+  totalChunks: number;
+}
+
 function Knowledge() {
-  const sources = [
-    { name: 'CS Policies', path: 'SharePoint › KarEve CS › Policies', chunks: 84, updated: '2 days ago' },
-    { name: 'Product KB', path: 'SharePoint › KarEve CS › Product KB', chunks: 132, updated: '6 hours ago' },
-    { name: 'Store policies (all brands)', path: 'SharePoint › Legal › Store Terms', chunks: 41, updated: '3 weeks ago' },
-    { name: 'Fulfillment SOPs', path: 'SharePoint › Supply Chain › SOPs', chunks: 27, updated: '5 days ago' },
-  ];
+  const [settings, setSettings] = useState<KbSettings | null>(null);
+  const [sources, setSources] = useState<KbSourcesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [editSiteId, setEditSiteId] = useState('');
+  const [editDriveId, setEditDriveId] = useState('');
+  const [editFolderPath, setEditFolderPath] = useState('/');
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [settingsRes, sourcesRes] = await Promise.all([
+        apiGet<KbSettings>('/kb/settings'),
+        apiGet<KbSourcesResponse>('/kb/sources'),
+      ]);
+      setSettings(settingsRes);
+      setSources(sourcesRes);
+      setEditSiteId(settingsRes.siteId ?? '');
+      setEditDriveId(settingsRes.driveId ?? '');
+      setEditFolderPath(settingsRes.folderPath ?? '/');
+    } catch (e) {
+      if (!isLive) {
+        setSettings({
+          siteId: null,
+          driveId: null,
+          folderPath: '/',
+          lastCrawlAt: null,
+          crawlStatus: 'idle',
+          crawlError: null,
+        });
+        setSources({ sources: [], totalSources: 0, totalChunks: 0 });
+      } else {
+        setError(apiErrorMessage(e));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchData();
+  }, []);
+
+  const handleSaveSettings = async () => {
+    if (!isLive) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await apiPut<KbSettings>('/kb/settings', {
+        siteId: editSiteId || null,
+        driveId: editDriveId || null,
+        folderPath: editFolderPath || '/',
+      });
+      setSettings(updated);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReindex = async () => {
+    if (!isLive) return;
+    setReindexing(true);
+    setError(null);
+    try {
+      await apiPost('/kb/reindex', {});
+      setTimeout(() => {
+        void fetchData();
+        setReindexing(false);
+      }, 2000);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+      setReindexing(false);
+    }
+  };
+
+  const isConfigured = Boolean(settings?.siteId && settings?.driveId);
+  const hasChanges =
+    editSiteId !== (settings?.siteId ?? '') ||
+    editDriveId !== (settings?.driveId ?? '') ||
+    editFolderPath !== (settings?.folderPath ?? '/');
+
+  if (loading) {
+    return (
+      <Panel title="Knowledge sources" hint="Loading...">
+        <div className="card-pad t-ter">Loading KB configuration...</div>
+      </Panel>
+    );
+  }
 
   return (
     <>
-      <Panel title="Indexed sources" hint="284 chunks · hybrid FTS + pgvector">
-        {sources.map((s) => (
-          <Row
-            key={s.name}
-            title={s.name}
-            desc={
-              <>
-                {s.path} · <span className="mono">{s.chunks}</span> chunks · updated {s.updated}
-              </>
-            }
-            control={<button className="btn btn-sm btn-secondary">Re-index</button>}
-          />
-        ))}
+      {error && (
+        <div className="callout callout-warn" style={{ marginBottom: 12 }}>
+          <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {!isConfigured && (
+        <div className="callout callout-warn" style={{ marginBottom: 12 }}>
+          <AlertTriangle size={14} style={{ flex: 'none', marginTop: 1 }} />
+          <span>
+            <strong>SharePoint not configured.</strong> Enter your Site ID and Drive ID below to
+            connect the knowledge base.
+          </span>
+        </div>
+      )}
+
+      <Panel title="SharePoint connection" hint={isConfigured ? 'Connected' : 'Not configured'}>
+        <Row
+          title="Site ID"
+          desc="The SharePoint site ID containing your knowledge base documents"
+          control={
+            <input
+              className="form-input mono"
+              style={{ width: 280 }}
+              value={editSiteId}
+              onChange={(e) => setEditSiteId(e.target.value)}
+              placeholder="kareve.sharepoint.com,..."
+            />
+          }
+        />
+        <Row
+          title="Drive ID"
+          desc="The document library drive ID"
+          control={
+            <input
+              className="form-input mono"
+              style={{ width: 280 }}
+              value={editDriveId}
+              onChange={(e) => setEditDriveId(e.target.value)}
+              placeholder="b!..."
+            />
+          }
+        />
+        <Row
+          title="Folder path"
+          desc="Folder within the drive to index (default: root)"
+          control={
+            <input
+              className="form-input mono"
+              style={{ width: 160 }}
+              value={editFolderPath}
+              onChange={(e) => setEditFolderPath(e.target.value)}
+              placeholder="/"
+            />
+          }
+        />
+        <div className="card-pad row gap-8" style={{ justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={!hasChanges || saving || !isLive}
+            onClick={handleSaveSettings}
+          >
+            {saving ? 'Saving...' : 'Save connection'}
+          </button>
+        </div>
       </Panel>
+
+      <Panel
+        title="Indexed sources"
+        hint={`${sources?.totalChunks ?? 0} chunks · hybrid FTS + pgvector`}
+      >
+        {sources && sources.sources.length > 0 ? (
+          sources.sources.map((s) => (
+            <Row
+              key={s.id}
+              title={s.name}
+              desc={
+                <>
+                  {s.path} · <span className="mono">{s.chunkCount}</span> chunks
+                  {s.indexedAt && ` · indexed ${shortAge(s.indexedAt)} ago`}
+                </>
+              }
+              control={
+                s.brandCode ? (
+                  <Badge tone="neutral">{s.brandCode}</Badge>
+                ) : null
+              }
+            />
+          ))
+        ) : (
+          <div className="card-pad t-ter">
+            {isConfigured
+              ? 'No documents indexed yet. Click Re-index to start.'
+              : 'Configure SharePoint connection above to index documents.'}
+          </div>
+        )}
+        <div className="card-pad row gap-8" style={{ justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-sm btn-secondary"
+            disabled={!isConfigured || reindexing || !isLive}
+            onClick={handleReindex}
+          >
+            {reindexing
+              ? 'Indexing...'
+              : settings?.crawlStatus === 'crawling'
+                ? 'Crawl in progress...'
+                : 'Re-index'}
+          </button>
+        </div>
+        {settings?.crawlStatus === 'failed' && settings.crawlError && (
+          <div className="card-pad">
+            <Badge tone="danger">Last crawl failed: {settings.crawlError}</Badge>
+          </div>
+        )}
+        {settings?.lastCrawlAt && (
+          <div className="card-pad t-ter t-xs">
+            Last indexed: {fullStamp(settings.lastCrawlAt)}
+          </div>
+        )}
+      </Panel>
+
+      {/* Retrieval quality is the lever on draft quality. If acceptance drops
+          below 50%, the fix is almost always the chunks, not the model. */}
       <div className="callout callout-accent">
         <BookOpen size={14} style={{ flex: 'none', marginTop: 1 }} />
         <span>
