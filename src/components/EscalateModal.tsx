@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { ArrowUpRight, Hash, Send, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Check, Hash, Info, RefreshCw, Send, Sparkles } from 'lucide-react';
 import { Modal } from './Modal';
 import { Avatar } from './ui';
 import { AGENTS, ME } from '@/data/mock';
 import { BRANDS } from '@/data/brands';
+import { createEscalation, isLive } from '@/data/source';
 import type { TicketDetail } from '@/data/view';
+import { ApiError } from '@/lib/api';
 import { cx, usd } from '@/lib/utils';
 
 const CHANNELS = [
@@ -13,10 +15,22 @@ const CHANNELS = [
   { id: 'ch-ful', name: '#fulfillment-escalations', team: 'Supply Chain' },
 ];
 
+function escalationErrorHeadline(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 404) return 'Channel not found';
+    if (e.status === 409) return 'Already claimed';
+  }
+  return 'Escalation could not be posted';
+}
+
 export function EscalateModal({ ticket, onClose }: { ticket: TicketDetail; onClose: () => void }) {
-  const [target, setTarget] = useState<string>('u7');
-  const [mode, setMode] = useState<'person' | 'channel'>('person');
+  const [target, setTarget] = useState<string>('ch-ops');
+  const [mode, setMode] = useState<'person' | 'channel'>('channel');
   const [reason, setReason] = useState('Repeat packaging damage — needs a fulfillment fix, not a one-off replacement');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [demoMode, setDemoMode] = useState(!isLive);
+  const [error, setError] = useState<unknown>(undefined);
   const customer = ticket.customer;
   const brand = BRANDS[ticket.brand];
 
@@ -24,6 +38,24 @@ export function EscalateModal({ ticket, onClose }: { ticket: TicketDetail; onClo
     mode === 'person'
       ? (AGENTS.find((a) => a.id === target)?.name ?? '')
       : (CHANNELS.find((c) => c.id === target)?.name ?? '');
+
+  const handleSend = async () => {
+    if (!target || sending) return;
+    setSending(true);
+    setError(undefined);
+
+    try {
+      const result = await createEscalation(ticket.id, target, ME.name);
+      if (result.teamsMessageId === 'fixture-msg') {
+        setDemoMode(true);
+      }
+      setSent(true);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <Modal
@@ -39,20 +71,54 @@ export function EscalateModal({ ticket, onClose }: { ticket: TicketDetail; onClo
           </span>
           <div className="ml-a row gap-6">
             <button className="btn btn-secondary" onClick={onClose}>
-              Cancel
+              {sent ? 'Close' : 'Cancel'}
             </button>
-            <button className="btn btn-primary" onClick={onClose} disabled={!targetName}>
-              <Send size={13} /> Send card
-            </button>
+            {!sent && (
+              <button
+                className="btn btn-primary"
+                onClick={() => void handleSend()}
+                disabled={!targetName || sending}
+              >
+                {sending ? (
+                  <RefreshCw size={13} className="spin" />
+                ) : (
+                  <Send size={13} />
+                )}
+                {sending ? 'Sending…' : 'Send card'}
+              </button>
+            )}
           </div>
         </>
       }
     >
+      {demoMode && (
+        <div className="callout callout-info" style={{ marginBottom: 12, background: '#F5F5F7', border: '1px solid #E5E5EA' }}>
+          <Info size={13} style={{ flex: 'none', marginTop: 1, color: '#1D1D1F' }} />
+          <span className="t-sm" style={{ color: '#1D1D1F' }}>Using demo Teams — escalation will be recorded but not posted to a real channel.</span>
+        </div>
+      )}
+
+      {error !== undefined && (
+        <div className="callout callout-warn" style={{ marginBottom: 12 }}>
+          <AlertTriangle size={13} style={{ flex: 'none', marginTop: 1 }} />
+          <span className="t-sm">
+            <strong>{escalationErrorHeadline(error)}</strong>
+          </span>
+        </div>
+      )}
+
+      {sent && (
+        <div className="callout callout-accent" style={{ marginBottom: 12, background: '#F5F5F7', border: '1px solid #0071E3' }}>
+          <Check size={13} style={{ flex: 'none', marginTop: 1, color: '#0071E3' }} />
+          <span className="t-sm" style={{ color: '#1D1D1F' }}>Escalation posted successfully.</span>
+        </div>
+      )}
+
       <div className="tab-bar" style={{ alignSelf: 'flex-start' }}>
-        <button className={cx('tab', mode === 'person' && 'active')} onClick={() => { setMode('person'); setTarget('u7'); }}>
+        <button className={cx('tab', mode === 'person' && 'active')} onClick={() => { setMode('person'); setTarget('u7'); }} disabled={sent}>
           Person
         </button>
-        <button className={cx('tab', mode === 'channel' && 'active')} onClick={() => { setMode('channel'); setTarget('ch-ops'); }}>
+        <button className={cx('tab', mode === 'channel' && 'active')} onClick={() => { setMode('channel'); setTarget('ch-ops'); }} disabled={sent}>
           Channel
         </button>
       </div>
