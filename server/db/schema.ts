@@ -354,24 +354,53 @@ export const csRoutingRules = pgTable(
 
 /**
  * Excel workbook bindings for data export. Each binding maps to a worksheet
- * in a Graph workbook. Live sessions are AD-107.
+ * in a Graph workbook. Live sessions are AD-107. Field map lives in payload.map.
  */
 export const csExcelBindings = pgTable(
   'cs_excel_bindings',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
-    workbookId: text('workbook_id').notNull(),
+    workbookId: text('workbook_id'),
     worksheet: text('worksheet').notNull(),
-    owner: text('owner').notNull(),
+    owner: text('owner'),
     columns: text('columns').array().notNull().default(sql`'{}'::text[]`),
     autoAppendOn: text('auto_append_on'),
+    payload: jsonb('payload').notNull().default({}),
     enabled: boolean('enabled').notNull().default(true),
     lastWriteAt: timestamp('last_write_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('cs_excel_bindings_workbook_worksheet_key').on(t.workbookId, t.worksheet)],
+  (t) => [
+    index('cs_excel_bindings_auto_append_idx')
+      .on(t.autoAppendOn)
+      .where(sql`${t.autoAppendOn} IS NOT NULL AND ${t.enabled}`),
+  ],
+);
+
+/**
+ * Excel appends track rows written to workbooks. Unique on (ticket_id, binding_id)
+ * to prevent duplicate appends for the same ticket and binding.
+ */
+export const csExcelAppends = pgTable(
+  'cs_excel_appends',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => csTickets.id, { onDelete: 'cascade' }),
+    bindingId: uuid('binding_id')
+      .notNull()
+      .references(() => csExcelBindings.id, { onDelete: 'cascade' }),
+    rowIndex: integer('row_index'),
+    values: jsonb('values'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('cs_excel_appends_ticket_binding_key').on(t.ticketId, t.bindingId),
+    index('cs_excel_appends_binding_idx').on(t.bindingId, t.createdAt.desc()),
+  ],
 );
 
 /**

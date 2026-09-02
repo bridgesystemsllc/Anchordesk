@@ -92,6 +92,12 @@ const schema = z.object({
   OPENAI_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  /**
+   * Graph access token for Excel workbook operations. When unset, the system
+   * uses fixture data and shows a "Using demo Excel" banner.
+   */
+  GRAPH_ACCESS_TOKEN: z.string().min(1).optional(),
 });
 
 function load() {

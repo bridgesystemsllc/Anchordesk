@@ -15,11 +15,20 @@ import {
 import { eq } from 'drizzle-orm';
 import { syncMailboxRegistry, enabledMailboxes } from '../ingest/mailboxes';
 
+/**
+ * Settings API integration tests. Requires a database.
+ *
+ *   createdb anchor_test
+ *   TEST_DATABASE_URL=postgres://localhost/anchor_test npm test
+ */
+const RUN = Boolean(process.env.TEST_DATABASE_URL);
+const suite = RUN ? describe : describe.skip;
+
 const app = createApp();
 const TOKEN = process.env.API_AUTH_TOKEN ?? '';
 const authHeader = TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {};
 
-describe('Settings API (AD-106)', () => {
+suite('Settings API (AD-106)', () => {
   beforeAll(async () => {
     await migrate();
   });
