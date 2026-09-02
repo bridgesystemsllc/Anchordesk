@@ -1,5 +1,7 @@
 import {
+  bigint,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -13,6 +15,23 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+
+/**
+ * Custom pgvector type for 1536-dimensional embeddings.
+ * Uses text-embedding-3-small from OpenAI.
+ */
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector(1536)';
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    const stripped = value.slice(1, -1);
+    return stripped ? stripped.split(',').map(Number) : [];
+  },
+});
 
 /**
  * Ingest slice of the §5 model. KB chunks, AI runs, escalations, calls and
@@ -209,5 +228,74 @@ export const csOutboundSends = pgTable(
   (t) => [
     uniqueIndex('cs_outbound_sends_key').on(t.idempotencyKey),
     index('cs_outbound_sends_ticket_idx').on(t.ticketId, t.createdAt.desc()),
+  ],
+);
+
+/**
+ * Application settings (singleton row). Stores KB configuration for SharePoint
+ * site/drive, and other tenant-wide settings.
+ */
+export const csSettings = pgTable('cs_settings', {
+  id: integer('id').primaryKey().default(1),
+  kbSiteId: text('kb_site_id'),
+  kbDriveId: text('kb_drive_id'),
+  kbFolderPath: text('kb_folder_path').default('/'),
+  kbLastCrawlAt: timestamp('kb_last_crawl_at', { withTimezone: true }),
+  kbCrawlStatus: text('kb_crawl_status').default('idle'),
+  kbCrawlError: text('kb_crawl_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Knowledge base sources (SharePoint documents). Each row is a document that
+ * has been crawled and chunked.
+ */
+export const csKbSources = pgTable(
+  'cs_kb_sources',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    driveItemId: text('drive_item_id').notNull(),
+    name: text('name').notNull(),
+    path: text('path').notNull(),
+    mimeType: text('mime_type'),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    etag: text('etag'),
+    checksum: text('checksum'),
+    brandCode: text('brand_code'),
+    indexedAt: timestamp('indexed_at', { withTimezone: true }),
+    lastModified: timestamp('last_modified', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('cs_kb_sources_drive_item_key').on(t.driveItemId),
+    index('cs_kb_sources_brand_idx').on(t.brandCode),
+    index('cs_kb_sources_path_idx').on(t.path),
+  ],
+);
+
+/**
+ * Knowledge base chunks (embedded text). Each document is split into chunks
+ * with embeddings for vector similarity search.
+ */
+export const csKbChunks = pgTable(
+  'cs_kb_chunks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => csKbSources.id, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    title: text('title').notNull(),
+    text: text('text').notNull(),
+    brandCode: text('brand_code'),
+    embedding: vector('embedding'),
+    tokens: integer('tokens'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('cs_kb_chunks_source_idx').on(t.sourceId),
+    index('cs_kb_chunks_brand_idx').on(t.brandCode),
   ],
 );

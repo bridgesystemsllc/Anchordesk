@@ -133,6 +133,88 @@ export async function apiPost<T>(path: string, body: unknown, signal?: AbortSign
   return payload as T;
 }
 
+export async function apiPut<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  if (!BASE_URL) throw new ApiError('VITE_API_URL is not configured', 0);
+
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'PUT',
+      signal: composed,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    if (e instanceof DOMException && e.name === 'TimeoutError') {
+      throw new ApiError('The server took too long to respond', 0);
+    }
+    throw new ApiError('Could not reach the Anchor Desk server', 0);
+  }
+
+  const text = await res.text();
+  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+  if (!res.ok) {
+    const message =
+      typeof payload.message === 'string'
+        ? payload.message
+        : typeof payload.error === 'string'
+          ? payload.error
+          : `${res.status} ${res.statusText}`;
+    throw new ApiError(message, res.status);
+  }
+
+  return payload as T;
+}
+
+export async function apiDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
+  if (!BASE_URL) throw new ApiError('VITE_API_URL is not configured', 0);
+
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'DELETE',
+      signal: composed,
+      headers: {
+        Accept: 'application/json',
+        ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+      },
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    if (e instanceof DOMException && e.name === 'TimeoutError') {
+      throw new ApiError('The server took too long to respond', 0);
+    }
+    throw new ApiError('Could not reach the Anchor Desk server', 0);
+  }
+
+  const text = await res.text();
+  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+  if (!res.ok) {
+    const message =
+      typeof payload.message === 'string'
+        ? payload.message
+        : typeof payload.error === 'string'
+          ? payload.error
+          : `${res.status} ${res.statusText}`;
+    throw new ApiError(message, res.status);
+  }
+
+  return payload as T;
+}
+
 export function apiErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.isUnauthorized) return 'Not authorized. Check VITE_API_TOKEN matches the server.';

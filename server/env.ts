@@ -80,6 +80,17 @@ const schema = z.object({
    */
   ANTHROPIC_MODEL: z.string().min(1).default('claude-sonnet-4-5'),
 
+  /**
+   * OpenAI API key for embeddings. Optional — tests use HashingEmbedder.
+   * Never commit a real key.
+   */
+  OPENAI_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * OpenAI embedding model. Defaults to text-embedding-3-small (1536 dims).
+   */
+  OPENAI_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
+
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

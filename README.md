@@ -68,6 +68,17 @@ npm run ingest:backfill -- 30   # one-time historical pull, once consent lands
 npm test                        # 149 tests
 ```
 
+**Note on pgvector:** The database uses `pgvector/pgvector:pg16` for vector similarity search.
+If upgrading from a plain Postgres image, you must recreate the volume to get the pgvector
+extension:
+
+```bash
+docker compose down
+docker volume rm anchor-desk_anchor-pgdata  # WARNING: destroys all data
+docker compose up -d
+npm run db:migrate
+```
+
 `db:seed` pushes synthetic Graph messages through normalization, triage, threading and
 idempotency rather than inserting rows — so what lands in the database is exactly what live mail
 would produce, and the UI can be driven against real data before admin consent exists. It is safe

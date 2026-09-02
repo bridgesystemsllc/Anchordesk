@@ -1,30 +1,41 @@
 /**
  * Retriever port for knowledge base chunks.
- * This ticket wires emptyRetriever. AD-103 replaces the export with
- * pgvector/SharePoint retrieval.
+ * AD-103: wired to hybridRetriever (pgvector + FTS).
+ * Option is `brand`, never `brandCode`. Default limit 8.
  */
 
-export interface KbChunk {
-  id: string;
-  title: string;
-  text: string;
-  brandCode: string | null;
-  source: string;
-}
+import {
+  hybridRetriever as kbHybridRetriever,
+  emptyRetriever as kbEmptyRetriever,
+  hasIndexedChunks,
+  type KbChunk,
+  type RetrieveOptions,
+  type Retriever,
+} from '../kb/retriever';
 
-export interface RetrieveOptions {
-  brandCode: string;
-  limit?: number;
-}
+export type { KbChunk, RetrieveOptions, Retriever };
 
-export interface Retriever {
-  retrieve(query: string, opts: RetrieveOptions): Promise<KbChunk[]>;
-}
+export const emptyRetriever: Retriever = kbEmptyRetriever;
+export const hybridRetriever: Retriever = kbHybridRetriever;
 
-export const emptyRetriever: Retriever = {
-  async retrieve(_query: string, _opts: RetrieveOptions): Promise<KbChunk[]> {
-    return [];
+let cachedHasChunks: boolean | null = null;
+
+/**
+ * Live retriever export. Uses hybridRetriever when KB has indexed chunks,
+ * falls back to emptyRetriever otherwise (for empty-KB tests).
+ */
+export const retriever: Retriever = {
+  async retrieve(query: string, opts?: RetrieveOptions): Promise<KbChunk[]> {
+    if (cachedHasChunks === null) {
+      cachedHasChunks = await hasIndexedChunks();
+    }
+    if (!cachedHasChunks) {
+      return emptyRetriever.retrieve(query, opts);
+    }
+    return hybridRetriever.retrieve(query, opts);
   },
 };
 
-export const retriever: Retriever = emptyRetriever;
+export function invalidateRetrieverCache(): void {
+  cachedHasChunks = null;
+}
