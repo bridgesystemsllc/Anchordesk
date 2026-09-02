@@ -91,6 +91,18 @@ const schema = z.object({
    */
   OPENAI_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
 
+  /**
+   * Shopify Admin API token. Optional — when unset or empty, order lookups
+   * return fixture data and display a "demo orders" banner.
+   */
+  SHOPIFY_ADMIN_TOKEN: z.string().optional().transform((v) => v || undefined),
+
+  /**
+   * Shopify store domain (e.g., mystore.myshopify.com). Required when
+   * SHOPIFY_ADMIN_TOKEN is set.
+   */
+  SHOPIFY_STORE_DOMAIN: z.string().optional().transform((v) => v || undefined),
+
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

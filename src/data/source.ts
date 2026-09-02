@@ -244,3 +244,83 @@ export async function getIngestHealth(signal?: AbortSignal): Promise<IngestHealt
 export async function searchTickets(signal?: AbortSignal): Promise<QueueItem[]> {
   return listQueue({ status: 'open_all', limit: 200 }, signal);
 }
+
+export interface ShopifyLineItem {
+  id: string;
+  title: string;
+  sku: string;
+  quantity: number;
+  price: string;
+}
+
+export interface ShopifyCustomer {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  ordersCount: number;
+  totalSpent: string;
+}
+
+export interface ShopifyAddress {
+  address1: string;
+  city: string;
+  province: string;
+  zip: string;
+  country: string;
+}
+
+export interface ShopifyOrder {
+  id: string;
+  name: string;
+  email: string;
+  customer: ShopifyCustomer;
+  createdAt: string;
+  fulfillmentStatus: string;
+  financialStatus: string;
+  totalPrice: string;
+  currency: string;
+  lineItems: ShopifyLineItem[];
+  shippingAddress: ShopifyAddress | null;
+  vip: boolean;
+}
+
+export type ShopifyLookupBy = 'number' | 'email' | 'name';
+
+export interface ShopifyLookupResult {
+  orders: ShopifyOrder[];
+  demo: boolean;
+}
+
+export async function lookupShopifyOrders(
+  q: string,
+  by: ShopifyLookupBy,
+  signal?: AbortSignal,
+): Promise<ShopifyLookupResult> {
+  if (!isLive) {
+    return { orders: [], demo: true };
+  }
+  const params = new URLSearchParams({ q, by });
+  return apiGet<ShopifyLookupResult>(`/api/shopify/orders?${params}`, signal);
+}
+
+export interface AttachOrderResult {
+  ok: boolean;
+  ticketId: string;
+  snapshotId: string;
+}
+
+export async function attachOrderToTicket(
+  ticketId: string,
+  shopifyOrderId: string,
+  signal?: AbortSignal,
+): Promise<AttachOrderResult> {
+  if (!isLive) {
+    return { ok: true, ticketId, snapshotId: 'demo-snapshot' };
+  }
+  return apiPost<AttachOrderResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/attach-order`,
+    { shopifyOrderId },
+    signal,
+  );
+}

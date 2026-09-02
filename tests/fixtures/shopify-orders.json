@@ -1,0 +1,242 @@
+{
+  "orders": [
+    {
+      "id": "5001",
+      "name": "#1001",
+      "email": "alice.smith@example.com",
+      "customer": {
+        "id": "cust_101",
+        "email": "alice.smith@example.com",
+        "firstName": "Alice",
+        "lastName": "Smith",
+        "ordersCount": 5,
+        "totalSpent": "450.00"
+      },
+      "createdAt": "2026-08-15T10:30:00Z",
+      "fulfillmentStatus": "fulfilled",
+      "financialStatus": "paid",
+      "totalPrice": "89.99",
+      "currency": "USD",
+      "lineItems": [
+        {
+          "id": "li_1001_1",
+          "title": "Mimosa Hair Honey",
+          "sku": "CD-MHH-8OZ",
+          "quantity": 2,
+          "price": "32.00"
+        },
+        {
+          "id": "li_1001_2",
+          "title": "Black Vanilla Leave-In Conditioner",
+          "sku": "CD-BVLIC-8OZ",
+          "quantity": 1,
+          "price": "25.99"
+        }
+      ],
+      "shippingAddress": {
+        "address1": "123 Main St",
+        "city": "Brooklyn",
+        "province": "NY",
+        "zip": "11201",
+        "country": "US"
+      },
+      "vip": true
+    },
+    {
+      "id": "5002",
+      "name": "#1002",
+      "email": "alice.smith@example.com",
+      "customer": {
+        "id": "cust_101",
+        "email": "alice.smith@example.com",
+        "firstName": "Alice",
+        "lastName": "Smith",
+        "ordersCount": 5,
+        "totalSpent": "450.00"
+      },
+      "createdAt": "2026-08-20T14:15:00Z",
+      "fulfillmentStatus": "in_transit",
+      "financialStatus": "paid",
+      "totalPrice": "65.50",
+      "currency": "USD",
+      "lineItems": [
+        {
+          "id": "li_1002_1",
+          "title": "Hair Milk Original",
+          "sku": "CD-HMO-8OZ",
+          "quantity": 1,
+          "price": "28.00"
+        },
+        {
+          "id": "li_1002_2",
+          "title": "Healthy Hair Butter",
+          "sku": "CD-HHB-8OZ",
+          "quantity": 1,
+          "price": "37.50"
+        }
+      ],
+      "shippingAddress": {
+        "address1": "123 Main St",
+        "city": "Brooklyn",
+        "province": "NY",
+        "zip": "11201",
+        "country": "US"
+      },
+      "vip": true
+    },
+    {
+      "id": "5003",
+      "name": "#1003",
+      "email": "bob.jones@example.com",
+      "customer": {
+        "id": "cust_102",
+        "email": "bob.jones@example.com",
+        "firstName": "Bob",
+        "lastName": "Jones",
+        "ordersCount": 1,
+        "totalSpent": "42.00"
+      },
+      "createdAt": "2026-08-22T09:00:00Z",
+      "fulfillmentStatus": "unfulfilled",
+      "financialStatus": "paid",
+      "totalPrice": "42.00",
+      "currency": "USD",
+      "lineItems": [
+        {
+          "id": "li_1003_1",
+          "title": "Dermablend Smooth Liquid Camo Foundation",
+          "sku": "DB-SLCF-1OZ",
+          "quantity": 1,
+          "price": "42.00"
+        }
+      ],
+      "shippingAddress": {
+        "address1": "456 Oak Ave",
+        "city": "Austin",
+        "province": "TX",
+        "zip": "78701",
+        "country": "US"
+      },
+      "vip": false
+    },
+    {
+      "id": "5004",
+      "name": "#1004",
+      "email": "carol.white@example.com",
+      "customer": {
+        "id": "cust_103",
+        "email": "carol.white@example.com",
+        "firstName": "Carol",
+        "lastName": "White",
+        "ordersCount": 2,
+        "totalSpent": "320.00"
+      },
+      "createdAt": "2026-08-25T16:45:00Z",
+      "fulfillmentStatus": "delivered",
+      "financialStatus": "paid",
+      "totalPrice": "156.00",
+      "currency": "USD",
+      "lineItems": [
+        {
+          "id": "li_1004_1",
+          "title": "Baxter Clay Pomade",
+          "sku": "BOC-CP-2OZ",
+          "quantity": 2,
+          "price": "46.00"
+        },
+        {
+          "id": "li_1004_2",
+          "title": "Baxter Shave Tonic",
+          "sku": "BOC-ST-4OZ",
+          "quantity": 1,
+          "price": "32.00"
+        },
+        {
+          "id": "li_1004_3",
+          "title": "Baxter Daily Face Wash",
+          "sku": "BOC-DFW-8OZ",
+          "quantity": 1,
+          "price": "32.00"
+        }
+      ],
+      "shippingAddress": {
+        "address1": "789 Pine Blvd",
+        "city": "Seattle",
+        "province": "WA",
+        "zip": "98101",
+        "country": "US"
+      },
+      "vip": true
+    },
+    {
+      "id": "5005",
+      "name": "#1005",
+      "email": "david.kim@example.com",
+      "customer": {
+        "id": "cust_104",
+        "email": "david.kim@example.com",
+        "firstName": "David",
+        "lastName": "Kim",
+        "ordersCount": 4,
+        "totalSpent": "185.00"
+      },
+      "createdAt": "2026-08-28T11:30:00Z",
+      "fulfillmentStatus": "exception",
+      "financialStatus": "paid",
+      "totalPrice": "55.00",
+      "currency": "USD",
+      "lineItems": [
+        {
+          "id": "li_1005_1",
+          "title": "AMBI Fade Cream Normal Skin",
+          "sku": "AMBI-FC-2OZ",
+          "quantity": 2,
+          "price": "27.50"
+        }
+      ],
+      "shippingAddress": {
+        "address1": "321 Elm St",
+        "city": "Chicago",
+        "province": "IL",
+        "zip": "60601",
+        "country": "US"
+      },
+      "vip": true
+    },
+    {
+      "id": "5006",
+      "name": "#1006",
+      "email": "emma.garcia@example.com",
+      "customer": {
+        "id": "cust_105",
+        "email": "emma.garcia@example.com",
+        "firstName": "Emma",
+        "lastName": "Garcia",
+        "ordersCount": 1,
+        "totalSpent": "29.99"
+      },
+      "createdAt": "2026-08-30T08:00:00Z",
+      "fulfillmentStatus": "in_transit",
+      "financialStatus": "paid",
+      "totalPrice": "29.99",
+      "currency": "USD",
+      "lineItems": [
+        {
+          "id": "li_1006_1",
+          "title": "AcneFree Oil-Free Acne Cleanser",
+          "sku": "AF-OFAC-8OZ",
+          "quantity": 1,
+          "price": "29.99"
+        }
+      ],
+      "shippingAddress": {
+        "address1": "555 Maple Dr",
+        "city": "Miami",
+        "province": "FL",
+        "zip": "33101",
+        "country": "US"
+      },
+      "vip": false
+    }
+  ]
+}

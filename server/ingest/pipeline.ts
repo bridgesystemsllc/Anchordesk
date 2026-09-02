@@ -1,5 +1,5 @@
 import { normalizeMessage } from './normalize';
-import { type StoreOutcome, logOutcome, storeMessage } from './store';
+import { type StoreOutcome, logOutcome, storeMessage, tryAutoAttachOrder } from './store';
 import type { MailboxRow } from './mailboxes';
 import { GraphError, graphRequest } from '../graph/client';
 import { MESSAGE_SELECT, type GraphMessage } from '../graph/types';
@@ -79,6 +79,12 @@ export async function ingestMessage(
         ...errFields(e),
       });
     }
+  }
+
+  // Auto-attach Shopify order if this is a new ticket and exactly one order matches.
+  // Runs outside the main path so Shopify unavailability cannot block ingest.
+  if (outcome.status === 'created' && result.message.counterpartyEmail) {
+    void tryAutoAttachOrder(outcome.ticketId, result.message.counterpartyEmail);
   }
 
   return outcome;
