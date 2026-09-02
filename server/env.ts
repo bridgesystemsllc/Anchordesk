@@ -68,6 +68,18 @@ const schema = z.object({
    */
   API_AUTH_TOKEN: z.string().min(16, 'API_AUTH_TOKEN must be at least 16 chars').optional(),
 
+  /**
+   * Anthropic API key for AI triage, drafting, and assist. Optional in
+   * development/test (suite boots without it; triage uses rules). If unset,
+   * draft/assist endpoints return a watchable error.
+   */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * Anthropic model to use. Defaults to claude-sonnet-4-5.
+   */
+  ANTHROPIC_MODEL: z.string().min(1).default('claude-sonnet-4-5'),
+
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

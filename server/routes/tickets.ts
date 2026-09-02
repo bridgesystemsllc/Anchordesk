@@ -3,7 +3,10 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-
 import { z } from 'zod';
 import { db } from '../db/client';
 import { csCustomers, csMessages, csTickets } from '../db/schema';
-import { SendError, sendReply } from '../ingest/outbound';
+import { SendError, sendReply, type SendReplyInput } from '../ingest/outbound';
+import { enforceCitations, parseCitationsJson } from '../ai/citations';
+import { assembleDraftContext } from '../ai/context';
+import { findSimilarTickets } from '../ai/assist';
 import { errFields, log } from '../log';
 
 export const ticketsRouter = Router();
@@ -13,7 +16,7 @@ const OPEN_STATES = ['new', 'open', 'pending', 'escalated'] as const;
 const listQuery = z.object({
   status: z.enum(['new', 'open', 'pending', 'escalated', 'resolved', 'closed', 'open_all']).default('open_all'),
   brand: z.enum(['CD', 'DB', 'BOC', 'AMBI', 'AF']).optional(),
-  intent: z.enum(['wismo', 'return', 'refund', 'damage', 'product_q', 'other']).optional(),
+  intent: z.enum(['wismo', 'return', 'refund', 'damage', 'product_q', 'supervisor', 'other']).optional(),
   assignee: z.string().min(1).optional(),
   unassigned: z.coerce.boolean().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -71,6 +74,10 @@ ticketsRouter.get('/tickets', async (req, res) => {
       messageCount: sql<number>`(
         select count(*)::int from cs_messages m where m.ticket_id = ${csTickets.id}
       )`,
+      aiDraftReady: sql<boolean>`exists(
+        select 1 from cs_messages m
+        where m.ticket_id = ${csTickets.id} and m.is_draft and m.drafted_by_ai
+      )`,
       customerId: csCustomers.id,
       customerName: csCustomers.name,
       customerEmail: csCustomers.email,
@@ -96,6 +103,14 @@ const replyBody = z.object({
    */
   idempotencyKey: z.string().min(8).max(128),
   agentId: z.string().max(128).optional(),
+  /** True if this is an AI-generated draft being sent. */
+  draftedByAi: z.boolean().optional(),
+  /** True if the draft was edited before sending. */
+  editedByHuman: z.boolean().optional(),
+  /** Original draft text before editing. */
+  originalDraft: z.string().optional(),
+  /** Citations from the AI draft. */
+  citations: z.object({ items: z.array(z.any()) }).optional(),
 });
 
 ticketsRouter.post('/tickets/:id/reply', async (req, res) => {
@@ -111,19 +126,85 @@ ticketsRouter.post('/tickets/:id/reply', async (req, res) => {
     return;
   }
 
-  try {
-    const outcome = await sendReply({
-      ticketId: id.data,
-      bodyText: parsed.data.body,
-      idempotencyKey: parsed.data.idempotencyKey,
-      agentId: parsed.data.agentId ?? null,
-    });
+  const { body, idempotencyKey, agentId, draftedByAi, editedByHuman, originalDraft, citations } = parsed.data;
 
-    // 409 tells the client a send is already running under this key, so the
-    // correct response is to wait rather than to try again with a new one.
+  if (draftedByAi) {
+    const [ticket] = await db
+      .select({
+        id: csTickets.id,
+        intent: csTickets.intent,
+        status: csTickets.status,
+      })
+      .from(csTickets)
+      .where(eq(csTickets.id, id.data))
+      .limit(1);
+
+    if (!ticket) {
+      res.status(404).json({ error: 'ticket_not_found', message: 'Ticket not found' });
+      return;
+    }
+
+    if (ticket.status === 'resolved' || ticket.status === 'closed') {
+      res.status(409).json({ error: 'ticket_closed', message: 'This ticket is closed' });
+      return;
+    }
+
+    if (ticket.intent === 'supervisor') {
+      res.status(409).json({
+        error: 'supervisor_never_deflect',
+        message: 'This customer asked for a supervisor. Do not auto-reply — escalate.',
+      });
+      return;
+    }
+
+    const ctx = await assembleDraftContext(id.data);
+    if (ctx) {
+      const citationItems = parseCitationsJson(citations);
+      const enforceResult = enforceCitations(body, citationItems, {
+        chunks: ctx.chunks,
+        order: ctx.order,
+      });
+
+      if (enforceResult.blocked) {
+        res.status(422).json({
+          error: 'uncited_claims',
+          uncited: enforceResult.uncited,
+          message: 'Every factual claim must cite a policy chunk or an order field.',
+        });
+        return;
+      }
+    }
+  }
+
+  try {
+    const input: SendReplyInput = {
+      ticketId: id.data,
+      bodyText: body,
+      idempotencyKey,
+      agentId: agentId ?? null,
+      draftedByAi: draftedByAi ?? false,
+      editedByHuman: editedByHuman ?? false,
+      originalDraft: originalDraft ?? null,
+      citations: citations ?? null,
+    };
+
+    const outcome = await sendReply(input);
+
     if (outcome.status === 'in_flight') {
       res.status(409).json({ error: 'send_in_flight', ...outcome });
       return;
+    }
+
+    if (draftedByAi) {
+      await db
+        .delete(csMessages)
+        .where(
+          and(
+            eq(csMessages.ticketId, id.data),
+            eq(csMessages.isDraft, true),
+            eq(csMessages.draftedByAi, true),
+          ),
+        );
     }
 
     res.json(outcome);
@@ -161,7 +242,7 @@ ticketsRouter.get('/tickets/:id', async (req, res) => {
     return;
   }
 
-  const [messages, customer] = await Promise.all([
+  const [allMessages, customer, similar] = await Promise.all([
     db
       .select()
       .from(csMessages)
@@ -170,7 +251,29 @@ ticketsRouter.get('/tickets/:id', async (req, res) => {
     ticket.customerId
       ? db.select().from(csCustomers).where(eq(csCustomers.id, ticket.customerId)).limit(1)
       : Promise.resolve([]),
+    findSimilarTickets(ticket.id),
   ]);
 
-  res.json({ ticket, customer: customer[0] ?? null, messages });
+  const messages = allMessages.filter((m) => !m.isDraft);
+  const draftMessage = allMessages.find((m) => m.isDraft && m.draftedByAi);
+
+  const draft = draftMessage
+    ? {
+        bodyText: draftMessage.bodyText,
+        citations: draftMessage.citations,
+        draftedByAi: true,
+      }
+    : null;
+
+  res.json({
+    ticket: {
+      ...ticket,
+      aiSummary: ticket.aiSummary ?? [],
+      policyHits: ticket.policyHits ?? [],
+    },
+    customer: customer[0] ?? null,
+    messages,
+    draft,
+    similar,
+  });
 });

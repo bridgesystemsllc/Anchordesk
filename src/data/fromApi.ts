@@ -23,6 +23,7 @@ export interface ApiQueueRow {
   tags: string[] | null;
   preview: string | null;
   messageCount: number | null;
+  aiDraftReady: boolean | null;
   customerId: string | null;
   customerName: string | null;
   customerEmail: string | null;
@@ -35,6 +36,22 @@ export interface ApiTicketRow extends Omit<ApiQueueRow, 'preview' | 'messageCoun
   orderSnapshot: unknown;
   conversationId: string | null;
   resolvedAt: string | null;
+  aiSummary: string[] | null;
+  policyHits: { title: string; text: string; chunkId?: string }[] | null;
+}
+
+export interface ApiDraft {
+  bodyText: string;
+  citations: { items: { n: number; label: string; source: string; snippet: string }[] } | null;
+  draftedByAi: boolean;
+}
+
+export interface ApiSimilarTicket {
+  id: string;
+  number: number;
+  subject: string;
+  brand: string;
+  createdAt: string;
 }
 
 export interface ApiCustomer {
@@ -71,7 +88,7 @@ const STATUSES = new Set<TicketStatus>([
   'resolved',
   'closed',
 ]);
-const INTENTS = new Set<Intent>(['wismo', 'return', 'refund', 'damage', 'product_q', 'other']);
+const INTENTS = new Set<Intent>(['wismo', 'return', 'refund', 'damage', 'product_q', 'supervisor', 'other']);
 const CHANNELS = new Set<Channel>(['email', 'phone', 'manual']);
 
 /**
@@ -130,16 +147,13 @@ export function toQueueItem(row: ApiQueueRow): QueueItem {
     channel: asChannel(row.channel),
     intent: asIntent(row.intent),
     orderNumber: row.orderNumber,
-    // Populated once Shopify enrichment attaches a snapshot (Days 6–7).
     orderStatus: null,
     customer: customerRef(row),
     assignee: row.assigneeId ? { id: row.assigneeId, name: row.assigneeId } : null,
     unread: Boolean(row.unread),
-    // No AI drafting yet — Day 11.
-    aiDraftReady: false,
+    aiDraftReady: Boolean(row.aiDraftReady),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    // A ticket with no SLA still has to sort somewhere; fall back to creation.
     slaDueAt: row.slaDueAt ?? row.createdAt,
     messageCount: row.messageCount ?? 0,
   };
@@ -162,8 +176,10 @@ export function toTicketDetail(payload: {
   ticket: ApiTicketRow;
   customer: ApiCustomer | null;
   messages: ApiMessage[];
+  draft?: ApiDraft | null;
+  similar?: ApiSimilarTicket[];
 }): TicketDetail {
-  const { ticket, customer, messages } = payload;
+  const { ticket, customer, messages, draft, similar } = payload;
 
   return {
     id: ticket.id,
@@ -193,10 +209,16 @@ export function toTicketDetail(payload: {
     slaDueAt: ticket.slaDueAt ?? ticket.createdAt,
     tags: ticket.tags ?? [],
     messages: messages.map(toMessage),
-    aiSummary: [],
-    aiDraft: null,
-    citations: [],
-    policyHits: [],
-    similar: [],
+    aiSummary: ticket.aiSummary ?? [],
+    aiDraft: draft?.bodyText ?? null,
+    citations: draft?.citations?.items ?? [],
+    policyHits: ticket.policyHits ?? [],
+    similar: (similar ?? []).map((s) => ({
+      id: s.id,
+      number: s.number,
+      subject: s.subject,
+      brand: asBrand(s.brand),
+      createdAt: s.createdAt,
+    })),
   };
 }

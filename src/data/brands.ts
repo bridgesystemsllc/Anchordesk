@@ -71,6 +71,7 @@ export const INTENT_LABEL: Record<Intent, string> = {
   refund: 'Refund',
   damage: 'Damage',
   product_q: 'Product question',
+  supervisor: 'Supervisor escalation',
   other: 'Other',
 };
 
@@ -80,6 +81,7 @@ export const INTENT_SHORT: Record<Intent, string> = {
   refund: 'Refund',
   damage: 'Damage',
   product_q: 'Product Q',
+  supervisor: 'Supervisor',
   other: 'Other',
 };
 

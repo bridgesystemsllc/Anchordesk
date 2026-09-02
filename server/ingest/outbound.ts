@@ -38,6 +38,10 @@ export interface SendReplyInput {
   bodyText: string;
   idempotencyKey: string;
   agentId?: string | null;
+  draftedByAi?: boolean;
+  editedByHuman?: boolean;
+  originalDraft?: string | null;
+  citations?: { items: unknown[] } | null;
 }
 
 /**
@@ -143,6 +147,23 @@ export async function sendReply(input: SendReplyInput): Promise<SendOutcome> {
       outboundMessage({ ticket, mailbox, bodyText, draftId, internetMessageId, sentAt }),
     );
     messageId = 'messageId' in outcome ? outcome.messageId : null;
+
+    if (messageId && (input.draftedByAi || input.editedByHuman || input.citations)) {
+      const editDiff =
+        input.editedByHuman && input.originalDraft
+          ? { original: input.originalDraft, sent: bodyText }
+          : null;
+
+      await db
+        .update(csMessages)
+        .set({
+          draftedByAi: input.draftedByAi ?? false,
+          editedByHuman: input.editedByHuman ?? false,
+          citations: input.citations ?? null,
+          editDiff,
+        })
+        .where(eq(csMessages.id, messageId));
+    }
   } catch (e) {
     // Recoverable: Sent Items reconciliation will pick the message up.
     log.error('reply sent but not written to the timeline', {

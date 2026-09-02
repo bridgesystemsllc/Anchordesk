@@ -4,7 +4,7 @@ export type BrandCode = 'CD' | 'DB' | 'BOC' | 'AMBI' | 'AF';
 
 export type TicketStatus = 'new' | 'open' | 'pending' | 'escalated' | 'resolved' | 'closed';
 
-export type Intent = 'wismo' | 'return' | 'refund' | 'damage' | 'product_q' | 'other';
+export type Intent = 'wismo' | 'return' | 'refund' | 'damage' | 'product_q' | 'supervisor' | 'other';
 
 export type Channel = 'email' | 'phone' | 'manual';
 
@@ -70,6 +70,14 @@ export interface Message {
   editedByHuman?: boolean;
 }
 
+export interface SimilarTicket {
+  id: string;
+  number: number;
+  subject: string;
+  brand: BrandCode;
+  createdAt: string;
+}
+
 export interface Ticket {
   id: string;
   number: number;
@@ -93,9 +101,10 @@ export interface Ticket {
   aiSummary: string[];
   aiDraft?: string;
   citations: Citation[];
-  policyHits: { title: string; text: string }[];
+  policyHits: { title: string; text: string; chunkId?: string }[];
   tags: string[];
   messages: Message[];
+  similar: SimilarTicket[];
 }
 
 export interface Agent {

@@ -12,6 +12,7 @@ import { ingestQueue } from './lib/serial';
 import { healthRouter } from './routes/health';
 import { notificationsRouter } from './routes/notifications';
 import { ticketsRouter } from './routes/tickets';
+import { assistRouter } from './routes/assist';
 
 /** Graph notification payloads are small; anything larger is not from Graph. */
 const BODY_LIMIT = '1mb';
@@ -45,6 +46,7 @@ export function createApp() {
   app.use('/api', healthRouter);
   app.use('/api/graph', notificationsRouter);
   app.use('/api', requireApiToken, ticketsRouter);
+  app.use('/api', requireApiToken, assistRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'not_found' }));
 

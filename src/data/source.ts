@@ -5,11 +5,14 @@ import {
   toQueueItem,
   toTicketDetail,
   type ApiCustomer,
+  type ApiDraft,
   type ApiMessage,
   type ApiQueueRow,
+  type ApiSimilarTicket,
   type ApiTicketRow,
 } from './fromApi';
 import type { QueueFilters, QueueItem, TicketDetail } from './view';
+import type { Citation, SimilarTicket } from './types';
 
 export { isLive };
 
@@ -65,6 +68,8 @@ export async function getTicket(id: string, signal?: AbortSignal): Promise<Ticke
     ticket: ApiTicketRow;
     customer: ApiCustomer | null;
     messages: ApiMessage[];
+    draft?: ApiDraft | null;
+    similar?: ApiSimilarTicket[];
   }>(`/api/tickets/${encodeURIComponent(id)}`, signal);
 
   return toTicketDetail(payload);
@@ -76,6 +81,15 @@ export interface SendReplyResult {
   messageId: string | null;
 }
 
+export interface SendReplyInput {
+  body: string;
+  idempotencyKey: string;
+  draftedByAi?: boolean;
+  editedByHuman?: boolean;
+  originalDraft?: string;
+  citations?: { items: Citation[] };
+}
+
 /**
  * Sends a reply. `idempotencyKey` must stay stable across retries of the same
  * composed message — that is what makes a double-click, a lost response, or a
@@ -83,16 +97,104 @@ export interface SendReplyResult {
  */
 export async function sendReply(
   ticketId: string,
-  body: string,
-  idempotencyKey: string,
+  input: SendReplyInput,
 ): Promise<SendReplyResult> {
   if (!isLive) {
     return { status: 'sent', ticketId, messageId: null };
   }
-  return apiPost<SendReplyResult>(`/api/tickets/${encodeURIComponent(ticketId)}/reply`, {
-    body,
-    idempotencyKey,
-  });
+  return apiPost<SendReplyResult>(`/api/tickets/${encodeURIComponent(ticketId)}/reply`, input);
+}
+
+export interface GenerateDraftResult {
+  text: string;
+  citations: Citation[];
+  uncited: string[];
+  blocked: boolean;
+  neverDeflect: boolean;
+  run: { id: string; costUsd: number; latencyMs: number };
+}
+
+export async function generateDraft(ticketId: string, signal?: AbortSignal): Promise<GenerateDraftResult> {
+  if (!isLive) {
+    return {
+      text: 'Thank you for contacting us. Let me look into this for you.',
+      citations: [],
+      uncited: [],
+      blocked: false,
+      neverDeflect: false,
+      run: { id: 'mock-run', costUsd: 0.002, latencyMs: 1200 },
+    };
+  }
+  return apiPost<GenerateDraftResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/draft`,
+    {},
+    signal,
+  );
+}
+
+export interface SummarizeResult {
+  bullets: string[];
+  run: { id: string; costUsd: number; latencyMs: number };
+}
+
+export async function summarizeThread(ticketId: string, signal?: AbortSignal): Promise<SummarizeResult> {
+  if (!isLive) {
+    return {
+      bullets: ['Customer reported order not delivered', 'Tracking shows stuck in transit'],
+      run: { id: 'mock-run', costUsd: 0.001, latencyMs: 800 },
+    };
+  }
+  return apiPost<SummarizeResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/summarize`,
+    {},
+    signal,
+  );
+}
+
+export interface PolicyHit {
+  title: string;
+  text: string;
+  chunkId: string;
+}
+
+export interface PolicyCheckResult {
+  hits: PolicyHit[];
+  emptyReason?: 'no_chunks';
+  run?: { id: string; costUsd: number; latencyMs: number };
+}
+
+export async function checkPolicy(ticketId: string, signal?: AbortSignal): Promise<PolicyCheckResult> {
+  if (!isLive) {
+    return {
+      hits: [],
+      emptyReason: 'no_chunks',
+      run: { id: 'mock-run', costUsd: 0, latencyMs: 50 },
+    };
+  }
+  return apiPost<PolicyCheckResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/policy-check`,
+    {},
+    signal,
+  );
+}
+
+export interface SimilarTicketsResult {
+  similar: SimilarTicket[];
+  run: { id: string; costUsd: number; latencyMs: number };
+}
+
+export async function getSimilarTickets(ticketId: string, signal?: AbortSignal): Promise<SimilarTicketsResult> {
+  if (!isLive) {
+    return {
+      similar: [],
+      run: { id: 'mock-run', costUsd: 0, latencyMs: 30 },
+    };
+  }
+  return apiPost<SimilarTicketsResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/similar`,
+    {},
+    signal,
+  );
 }
 
 export interface MailboxHealth {
