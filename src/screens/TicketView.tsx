@@ -9,12 +9,14 @@ import {
   CornerUpLeft,
   FileText,
   History,
+  Info,
   Mail,
   MessageSquare,
   Package,
   Paperclip,
   Phone,
   RefreshCw,
+  Search,
   Send,
   Settings2,
   ShieldAlert,
@@ -23,18 +25,23 @@ import {
   StickyNote,
   Table2,
   User,
+  X,
 } from 'lucide-react';
 import { EscalateModal } from '@/components/EscalateModal';
 import { LogCallModal } from '@/components/LogCallModal';
 import { Avatar, BrandChip, EmptyState, KeyVal, SlaRing, StatusBadge } from '@/components/ui';
 import { BRANDS, INTENT_LABEL } from '@/data/brands';
 import {
+  attachOrderToTicket,
   checkPolicy,
   generateDraft,
   getTicket,
   isLive,
+  lookupShopifyOrders,
   sendReply,
   summarizeThread,
+  type ShopifyLookupBy,
+  type ShopifyOrder,
   getExcelBindings,
   getExcelPreview,
   appendExcelRow,
@@ -119,6 +126,16 @@ export function TicketView() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<unknown>(undefined);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const [orderSearchOpen, setOrderSearchOpen] = useState(false);
+  const [orderQuery, setOrderQuery] = useState('');
+  const [orderSearchBy, setOrderSearchBy] = useState<ShopifyLookupBy>('email');
+  const [orderSearching, setOrderSearching] = useState(false);
+  const [orderResults, setOrderResults] = useState<ShopifyOrder[]>([]);
+  const [orderDemo, setOrderDemo] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const [attachedSnapshotId, setAttachedSnapshotId] = useState<string | null>(null);
 
   const [excelBindings, setExcelBindings] = useState<ExcelBinding[]>([]);
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null);
@@ -708,28 +725,78 @@ export function TicketView() {
             </div>
           </div>
         ) : (
-          <div className="rail-card">
-            <div className="rail-head">
-              <Package size={11} /> Order
-            </div>
-            <div className="rail-body">
-              {ticket.orderNumber ? (
-                <>
-                  <KeyVal k="Referenced" v={<span className="mono">{ticket.orderNumber}</span>} />
-                  <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
-                    Extracted from the message. Full order detail arrives with Shopify enrichment.
-                  </p>
-                </>
-              ) : (
-                <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
-                  No order number found in this thread. Search Shopify by email or name to attach one.
-                </p>
-              )}
-              <button className="btn btn-sm btn-secondary" disabled={isLive}>
-                Find order
-              </button>
-            </div>
-          </div>
+          <OrderLookupCard
+            ticket={ticket}
+            isOpen={orderSearchOpen}
+            onToggle={() => setOrderSearchOpen(!orderSearchOpen)}
+            query={orderQuery}
+            onQueryChange={setOrderQuery}
+            searchBy={orderSearchBy}
+            onSearchByChange={setOrderSearchBy}
+            searching={orderSearching}
+            results={orderResults}
+            demo={orderDemo}
+            error={orderError}
+            attaching={attaching}
+            attachedSnapshotId={attachedSnapshotId}
+            onSearch={async () => {
+              if (!orderQuery.trim()) return;
+              setOrderSearching(true);
+              setOrderError(null);
+              setOrderResults([]);
+              try {
+                const result = await lookupShopifyOrders(orderQuery, orderSearchBy);
+                setOrderResults(result.orders);
+                setOrderDemo(result.demo);
+              } catch (e) {
+                if (e instanceof ApiError) {
+                  if (e.status === 503) {
+                    const msg = e.message.toLowerCase();
+                    if (msg.includes('not connected')) {
+                      setOrderError('Shopify is not connected');
+                    } else {
+                      setOrderError('Order lookup failed');
+                    }
+                  } else {
+                    setOrderError(e.message);
+                  }
+                } else {
+                  setOrderError('Order lookup failed');
+                }
+              } finally {
+                setOrderSearching(false);
+              }
+            }}
+            onAttach={async (order: ShopifyOrder) => {
+              setAttaching(true);
+              setOrderError(null);
+              try {
+                const result = await attachOrderToTicket(ticket.id, order.id);
+                setAttachedSnapshotId(result.snapshotId);
+                refetch();
+              } catch (e) {
+                if (e instanceof ApiError) {
+                  if (e.status === 404) {
+                    setOrderError('Order could not be attached');
+                  } else if (e.status === 503) {
+                    setOrderError('Order could not be attached');
+                  } else {
+                    setOrderError(e.message);
+                  }
+                } else {
+                  setOrderError('Order could not be attached');
+                }
+              } finally {
+                setAttaching(false);
+              }
+            }}
+            onClear={() => {
+              setOrderResults([]);
+              setOrderQuery('');
+              setOrderError(null);
+              setAttachedSnapshotId(null);
+            }}
+          />
         )}
 
         <div className="rail-card">
@@ -1042,4 +1109,217 @@ function TimelineItem({ m, index }: { m: Message; index: number }) {
       )}
     </div>
   );
+}
+
+interface OrderLookupCardProps {
+  ticket: TicketDetail;
+  isOpen: boolean;
+  onToggle: () => void;
+  query: string;
+  onQueryChange: (q: string) => void;
+  searchBy: ShopifyLookupBy;
+  onSearchByChange: (by: ShopifyLookupBy) => void;
+  searching: boolean;
+  results: ShopifyOrder[];
+  demo: boolean;
+  error: string | null;
+  attaching: boolean;
+  attachedSnapshotId: string | null;
+  onSearch: () => void;
+  onAttach: (order: ShopifyOrder) => void;
+  onClear: () => void;
+}
+
+function OrderLookupCard({
+  ticket,
+  isOpen,
+  onToggle,
+  query,
+  onQueryChange,
+  searchBy,
+  onSearchByChange,
+  searching,
+  results,
+  demo,
+  error,
+  attaching,
+  attachedSnapshotId,
+  onSearch,
+  onAttach,
+  onClear,
+}: OrderLookupCardProps) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && query.trim()) {
+      onSearch();
+    }
+  };
+
+  return (
+    <div className="rail-card">
+      <div className="rail-head">
+        <Package size={11} /> Order
+        {!isOpen && (
+          <button
+            className="btn btn-xs btn-ghost ml-a"
+            onClick={onToggle}
+            title="Search Shopify orders"
+          >
+            <Search size={11} /> Find
+          </button>
+        )}
+        {isOpen && (
+          <button
+            className="btn btn-xs btn-ghost ml-a"
+            onClick={() => {
+              onClear();
+              onToggle();
+            }}
+            title="Close search"
+          >
+            <X size={11} />
+          </button>
+        )}
+      </div>
+      <div className="rail-body">
+        {ticket.orderNumber && !isOpen && (
+          <>
+            <KeyVal k="Referenced" v={<span className="mono">{ticket.orderNumber}</span>} />
+            <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+              Extracted from the message. Click Find to search Shopify.
+            </p>
+          </>
+        )}
+
+        {!ticket.orderNumber && !isOpen && (
+          <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+            No order number found in this thread. Click Find to search Shopify by email or name.
+          </p>
+        )}
+
+        {isOpen && (
+          <>
+            {demo && (
+              <div className="callout callout-info" style={{ marginBottom: 10 }}>
+                <Info size={13} style={{ flex: 'none', marginTop: 1 }} />
+                <span className="t-xs">Using demo orders</span>
+              </div>
+            )}
+
+            <div className="row gap-6" style={{ marginBottom: 10 }}>
+              <select
+                className="form-select"
+                value={searchBy}
+                onChange={(e) => onSearchByChange(e.target.value as ShopifyLookupBy)}
+                style={{ width: 90, fontSize: 12, padding: '4px 6px' }}
+              >
+                <option value="email">Email</option>
+                <option value="number">Order #</option>
+                <option value="name">Name</option>
+              </select>
+              <input
+                type="text"
+                className="form-input"
+                placeholder={
+                  searchBy === 'email'
+                    ? 'customer@example.com'
+                    : searchBy === 'number'
+                      ? '#1001'
+                      : 'John Doe'
+                }
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                style={{ flex: 1, fontSize: 12, padding: '5px 8px' }}
+              />
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={onSearch}
+                disabled={searching || !query.trim()}
+                style={{ padding: '5px 10px' }}
+              >
+                {searching ? <RefreshCw size={12} className="spin" /> : <Search size={12} />}
+              </button>
+            </div>
+
+            {error && (
+              <div className="callout callout-warn" style={{ marginBottom: 10 }}>
+                <AlertTriangle size={13} style={{ flex: 'none', marginTop: 1 }} />
+                <span className="t-sm">{error}</span>
+              </div>
+            )}
+
+            {attachedSnapshotId && (
+              <div className="callout callout-success" style={{ marginBottom: 10 }}>
+                <Check size={13} style={{ flex: 'none', marginTop: 1 }} />
+                <span className="t-sm">Order attached successfully</span>
+              </div>
+            )}
+
+            {results.length === 0 && !searching && !error && query.trim() && (
+              <p className="t-sm t-ter" style={{ lineHeight: 1.55 }}>
+                No orders found. Try a different search.
+              </p>
+            )}
+
+            {results.length > 0 && (
+              <div className="col gap-8">
+                {results.map((order) => (
+                  <div
+                    key={order.id}
+                    className="order-result"
+                    style={{
+                      padding: '8px 10px',
+                      background: 'var(--surface)',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div className="row gap-6" style={{ marginBottom: 4 }}>
+                      <span className="mono t-sm" style={{ fontWeight: 600 }}>
+                        {order.name}
+                      </span>
+                      {order.vip && (
+                        <Star size={11} style={{ color: 'var(--warning)' }} fill="currentColor" />
+                      )}
+                      <span className="t-xs t-ter ml-a">{usd(parseFloat(order.totalPrice))}</span>
+                    </div>
+                    <div className="t-xs t-ter" style={{ marginBottom: 4 }}>
+                      {order.customer.firstName} {order.customer.lastName} · {order.email}
+                    </div>
+                    <div className="row gap-6">
+                      <span className={cx('badge', 'badge-sm', getFulfillmentBadge(order.fulfillmentStatus))}>
+                        {order.fulfillmentStatus}
+                      </span>
+                      <button
+                        className="btn btn-xs btn-primary ml-a"
+                        onClick={() => onAttach(order)}
+                        disabled={attaching}
+                      >
+                        {attaching ? <RefreshCw size={10} className="spin" /> : <Check size={10} />}
+                        Attach
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getFulfillmentBadge(status: string): string {
+  switch (status) {
+    case 'delivered':
+      return 'badge-success';
+    case 'in_transit':
+    case 'out_for_delivery':
+      return 'badge-info';
+    case 'exception':
+      return 'badge-danger';
+    default:
+      return 'badge-neutral';
+  }
 }

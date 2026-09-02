@@ -317,6 +317,28 @@ export const csOpsDrills = pgTable(
 );
 
 /**
+ * Shopify order snapshots for customer context (AD-102).
+ * Stores immutable snapshots of orders attached to tickets.
+ * Re-attaching the same (ticket_id, shopify_order_id) pair returns the existing snapshot.
+ */
+export const csOrderSnapshots = pgTable(
+  'cs_order_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => csTickets.id, { onDelete: 'cascade' }),
+    shopifyOrderId: text('shopify_order_id').notNull(),
+    payload: jsonb('payload').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('cs_order_snapshots_ticket_order_key').on(t.ticketId, t.shopifyOrderId),
+    index('cs_order_snapshots_ticket_idx').on(t.ticketId),
+  ],
+);
+
+/**
  * Brand settings — display names, signatures, and brand voice for AI drafting.
  * Five brands: CD, DB, BOC, AMBI, AF.
  */

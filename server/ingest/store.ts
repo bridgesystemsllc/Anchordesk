@@ -1,8 +1,9 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NormalizedMessage } from './normalize';
 import { db } from '../db/client';
-import { csCustomers, csMessages, csTickets } from '../db/schema';
-import { log } from '../log';
+import { csCustomers, csMessages, csTickets, csOrderSnapshots } from '../db/schema';
+import { log, errFields } from '../log';
+import { lookupOrdersByEmail } from '../shopify/orders';
 
 /**
  * A reply on a thread we closed long ago is a new problem, not a reopening of
@@ -225,4 +226,39 @@ export function logOutcome(outcome: StoreOutcome, msg: NormalizedMessage): void 
     priority: msg.priority,
     orderNumber: msg.orderNumber,
   });
+}
+
+/**
+ * Auto-attach Shopify order to a newly created ticket if exactly one order
+ * matches the customer's email. Runs outside the main transaction so Shopify
+ * unavailability cannot block ingest.
+ */
+export async function tryAutoAttachOrder(
+  ticketId: string,
+  customerEmail: string | undefined,
+): Promise<void> {
+  if (!customerEmail) return;
+
+  try {
+    const orders = await lookupOrdersByEmail(customerEmail);
+    if (orders.length !== 1) return;
+
+    const order = orders[0]!;
+    await db
+      .insert(csOrderSnapshots)
+      .values({
+        ticketId,
+        shopifyOrderId: order.id,
+        payload: order,
+      })
+      .onConflictDoNothing();
+
+    log.debug('auto-attached order to ticket', {
+      ticketId,
+      shopifyOrderId: order.id,
+      email: customerEmail,
+    });
+  } catch (e) {
+    log.warn('auto-attach order failed', { ticketId, email: customerEmail, ...errFields(e) });
+  }
 }
