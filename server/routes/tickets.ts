@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { and, asc, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
-import { csCustomers, csMessages, csTickets } from '../db/schema';
+import { csCustomers, csMessages, csTickets, csExcelBindings } from '../db/schema';
 import { SendError, sendReply, type SendReplyInput } from '../ingest/outbound';
 import { enforceCitations, parseCitationsJson } from '../ai/citations';
 import { assembleDraftContext } from '../ai/context';
 import { findSimilarTickets } from '../ai/assist';
+import { appendExcelRow } from './excel';
 import { errFields, log } from '../log';
 
 export const ticketsRouter = Router();
@@ -275,5 +276,77 @@ ticketsRouter.get('/tickets/:id', async (req, res) => {
     messages,
     draft,
     similar,
+  });
+});
+
+/**
+ * POST /api/tickets/:id/resolve
+ * Marks a ticket as resolved and triggers auto-append for matching Excel bindings.
+ * After success, each binding with autoAppendOn matching the ticket intent gets one POST.
+ * 409 ignored, 503 logged — resolve still succeeds.
+ */
+ticketsRouter.post('/tickets/:id/resolve', async (req, res) => {
+  const id = z.string().uuid().safeParse(req.params.id);
+  if (!id.success) {
+    res.status(400).json({ error: 'invalid_id' });
+    return;
+  }
+
+  const [ticket] = await db
+    .select({
+      id: csTickets.id,
+      status: csTickets.status,
+      intent: csTickets.intent,
+    })
+    .from(csTickets)
+    .where(eq(csTickets.id, id.data))
+    .limit(1);
+
+  if (!ticket) {
+    res.status(404).json({ error: 'not_found', message: 'Ticket not found' });
+    return;
+  }
+
+  if (ticket.status === 'resolved' || ticket.status === 'closed') {
+    res.status(409).json({ error: 'already_resolved', message: 'Ticket is already resolved' });
+    return;
+  }
+
+  await db
+    .update(csTickets)
+    .set({
+      status: 'resolved',
+      resolvedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(csTickets.id, id.data));
+
+  const appendResults: Array<{ bindingId: string; ok: boolean; error?: string }> = [];
+
+  if (ticket.intent) {
+    const autoAppendBindings = await db
+      .select({ id: csExcelBindings.id, name: csExcelBindings.name })
+      .from(csExcelBindings)
+      .where(and(eq(csExcelBindings.autoAppendOn, ticket.intent), eq(csExcelBindings.enabled, true)));
+
+    for (const binding of autoAppendBindings) {
+      const result = await appendExcelRow(binding.id, ticket.id);
+      appendResults.push({ bindingId: binding.id, ok: result.ok, error: result.error });
+
+      if (!result.ok && result.error === 'excel_unavailable') {
+        log.warn('Auto-append failed on resolve', {
+          ticketId: ticket.id,
+          bindingId: binding.id,
+          error: result.error,
+        });
+      }
+    }
+  }
+
+  res.json({
+    ok: true,
+    ticketId: ticket.id,
+    status: 'resolved',
+    appends: appendResults,
   });
 });

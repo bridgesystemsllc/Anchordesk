@@ -324,3 +324,81 @@ export async function attachOrderToTicket(
     signal,
   );
 }
+
+export interface ExcelBinding {
+  id: string;
+  name: string;
+  workbookId: string | null;
+  worksheet: string;
+  owner: string | null;
+  autoAppendOn: string | null;
+}
+
+export interface ExcelPreview {
+  columns: string[];
+  rows: string[][];
+  workbookId: string | null;
+  worksheet: string;
+  demo?: boolean;
+}
+
+export interface ExcelAppendResult {
+  ok: boolean;
+  bindingId: string;
+  ticketId: string;
+  rowIndex: number | null;
+}
+
+export interface ResolveResult {
+  ok: boolean;
+  ticketId: string;
+  status: string;
+  appends: Array<{ bindingId: string; ok: boolean; error?: string }>;
+}
+
+export async function getExcelBindings(signal?: AbortSignal): Promise<ExcelBinding[]> {
+  if (!isLive) {
+    return [
+      { id: 'fixture-returns', name: 'Returns Log', workbookId: 'demo', worksheet: 'FY26 Returns', owner: 'CS Shared', autoAppendOn: 'return' },
+    ];
+  }
+  const res = await apiGet<{ bindings: ExcelBinding[] }>('/api/settings/bindings', signal);
+  return res.bindings ?? [];
+}
+
+export async function getExcelPreview(bindingId: string, signal?: AbortSignal): Promise<ExcelPreview> {
+  if (!isLive) {
+    return {
+      columns: ['Date', 'Ticket id', 'Brand', 'Customer', 'SKU', 'Reason', 'Refund', 'Agent'],
+      rows: [
+        ['2026-08-11', 't-4816', 'CD', 'Denise Alvarez', 'CD-WDD-SHMP', 'Mis-pick', '$0.00', 'P. Raman'],
+        ['2026-08-11', 't-4819', 'AF', 'Ivy Chen', 'AF-3STEP', 'Unopened / reaction', '$24.99', 'D. Park'],
+      ],
+      workbookId: 'demo',
+      worksheet: 'FY26 Returns',
+      demo: true,
+    };
+  }
+  return apiGet<ExcelPreview>(`/api/excel/${encodeURIComponent(bindingId)}/preview`, signal);
+}
+
+export async function appendExcelRow(
+  bindingId: string,
+  ticketId: string,
+  values?: string[],
+): Promise<ExcelAppendResult> {
+  if (!isLive) {
+    return { ok: true, bindingId, ticketId, rowIndex: null };
+  }
+  return apiPost<ExcelAppendResult>(`/api/excel/${encodeURIComponent(bindingId)}/append`, {
+    ticketId,
+    values,
+  });
+}
+
+export async function resolveTicket(ticketId: string): Promise<ResolveResult> {
+  if (!isLive) {
+    return { ok: true, ticketId, status: 'resolved', appends: [] };
+  }
+  return apiPost<ResolveResult>(`/api/tickets/${encodeURIComponent(ticketId)}/resolve`, {});
+}

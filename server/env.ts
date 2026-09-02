@@ -104,6 +104,12 @@ const schema = z.object({
   SHOPIFY_STORE_DOMAIN: z.string().optional().transform((v) => v || undefined),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  /**
+   * Graph access token for Excel workbook operations. When unset, the system
+   * uses fixture data and shows a "Using demo Excel" banner.
+   */
+  GRAPH_ACCESS_TOKEN: z.string().min(1).optional(),
 });
 
 function load() {

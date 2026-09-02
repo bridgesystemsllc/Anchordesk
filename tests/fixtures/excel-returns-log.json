@@ -1,0 +1,13 @@
+{
+  "bindingId": "fixture-returns",
+  "workbookId": "demo-workbook-id",
+  "worksheet": "FY26 Returns",
+  "columns": ["Date", "Ticket id", "Brand", "Customer", "SKU", "Reason", "Refund", "Agent"],
+  "rows": [
+    ["2026-08-11", "t-4816", "CD", "Denise Alvarez", "CD-WDD-SHMP", "Mis-pick", "$0.00", "P. Raman"],
+    ["2026-08-11", "t-4819", "AF", "Ivy Chen", "AF-3STEP", "Unopened / reaction", "$24.99", "D. Park"],
+    ["2026-08-10", "t-4802", "DB", "Karen Liu", "DB-LSP-01", "Wrong shade", "$32.00", "M. Okonkwo"],
+    ["2026-08-10", "t-4798", "AMBI", "Tina Reyes", "AM-FADE-2OZ", "Irritation", "$14.20", "D. Park"],
+    ["2026-08-09", "t-4791", "BOC", "Sam Idris", "BX-DEO", "Scent dislike", "$20.00", "P. Raman"]
+  ]
+}
